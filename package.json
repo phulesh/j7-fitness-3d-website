@@ -1,0 +1,10 @@
+{
+  "name": "j7-fitness-3d-website",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Premium frontend-only 3D animated UI demo for J7 Fitness, Raipur.",
+  "scripts": {
+    "dev": "python3 -m http.server 5173 --bind 0.0.0.0",
+    "start": "python3 -m http.server 5173 --bind 0.0.0.0"
+  }
+}
