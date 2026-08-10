@@ -4,8 +4,11 @@
   "private": true,
   "description": "Premium frontend-only 3D animated UI demo for J7 Fitness, Raipur.",
   "scripts": {
-  "dev": "vite",
-  "start": "vite --host 0.0.0.0 --port $PORT",
-  "build": "vite build"
+    "dev": "vite",
+    "build": "vite build",
+    "start": "vite --host 0.0.0.0 --port $PORT"
+  },
+  "devDependencies": {
+    "vite": "^7.1.0"
   }
 }
