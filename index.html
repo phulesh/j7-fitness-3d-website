@@ -1,0 +1,600 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="description" content="Premium 3D animated frontend UI demo for J7 Fitness, Raipur." />
+  <title>J7 Fitness — Premium 3D Gym UI Demo</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="loading-screen" aria-hidden="true">
+    <div class="loader-card">
+      <div class="loader-mark">J7</div>
+      <div>
+        <p>J7 FITNESS</p>
+        <span>Loading premium experience</span>
+      </div>
+      <div class="loader-line"><span></span></div>
+    </div>
+  </div>
+
+  <canvas id="particleCanvas" aria-hidden="true"></canvas>
+  <div class="scroll-progress" aria-hidden="true"></div>
+
+  <svg class="svg-sprite" aria-hidden="true" focusable="false">
+    <symbol id="icon-dumbbell" viewBox="0 0 64 64">
+      <path d="M8 25v14M15 18v28M23 23v18M41 23v18M49 18v28M56 25v14M23 32h18" />
+    </symbol>
+    <symbol id="icon-trainer" viewBox="0 0 64 64">
+      <path d="M32 31a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z" />
+      <path d="M14 55c2.5-11 10-17 18-17s15.5 6 18 17" />
+      <path d="M45 19h6v13h-6M19 19h-6v13h6" />
+    </symbol>
+    <symbol id="icon-fight" viewBox="0 0 64 64">
+      <path d="M18 39c-5-2-8-6-8-12 0-9 7-16 16-16 6 0 10 2 14 7" />
+      <path d="M25 34l7 18 7-18" />
+      <path d="M39 34c7 1 15-3 15-11 0-7-6-12-13-12" />
+      <path d="M20 31h24" />
+    </symbol>
+    <symbol id="icon-boxing" viewBox="0 0 64 64">
+      <path d="M25 13h15c7 0 12 5 12 12v5c0 7-5 12-12 12H24c-7 0-12-5-12-12v-5c0-7 6-12 13-12Z" />
+      <path d="M19 42v11h26V42" />
+      <path d="M28 13v18M38 14v17M19 28h33" />
+    </symbol>
+    <symbol id="icon-kick" viewBox="0 0 64 64">
+      <path d="M14 17c8 6 18 8 31 5" />
+      <path d="M29 22l10 18 13 4c3 1 4 5 1 8-4 4-14 0-20-3l-9-19" />
+      <path d="M14 17l7 13" />
+      <path d="M12 50h17" />
+    </symbol>
+    <symbol id="icon-crossfit" viewBox="0 0 64 64">
+      <path d="M32 8l7 16 17 2-13 11 4 17-15-9-15 9 4-17L8 26l17-2 7-16Z" />
+      <path d="M18 13l28 38M46 13L18 51" />
+    </symbol>
+    <symbol id="icon-music" viewBox="0 0 64 64">
+      <path d="M25 47a8 8 0 1 1-5-7V15l30-5v29" />
+      <path d="M50 41a8 8 0 1 1-5-7" />
+      <path d="M25 23l25-4" />
+    </symbol>
+    <symbol id="icon-yoga" viewBox="0 0 64 64">
+      <path d="M32 14c6 6 6 13 0 20-6-7-6-14 0-20Z" />
+      <path d="M20 31c-8 1-13 7-14 16 9 0 16-4 20-12" />
+      <path d="M44 31c8 1 13 7 14 16-9 0-16-4-20-12" />
+      <path d="M18 51h28" />
+    </symbol>
+    <symbol id="icon-pulse" viewBox="0 0 64 64">
+      <path d="M5 34h13l6-17 11 31 6-14h18" />
+      <path d="M12 14h40v40H12z" />
+    </symbol>
+    <symbol id="icon-bike" viewBox="0 0 64 64">
+      <path d="M18 49a10 10 0 1 0 0-20 10 10 0 0 0 0 20ZM46 49a10 10 0 1 0 0-20 10 10 0 0 0 0 20Z" />
+      <path d="M18 39h10l9-18h7M31 39l-8-17h10M37 21l9 18" />
+      <path d="M42 15h11" />
+    </symbol>
+    <symbol id="icon-spark" viewBox="0 0 64 64">
+      <path d="M32 6l5 20 21 6-21 6-5 20-5-20-21-6 21-6 5-20Z" />
+      <path d="M50 7l2 8 8 2-8 2-2 8-2-8-8-2 8-2 2-8Z" />
+    </symbol>
+    <symbol id="icon-map" viewBox="0 0 64 64">
+      <path d="M32 58S14 40 14 25a18 18 0 1 1 36 0c0 15-18 33-18 33Z" />
+      <path d="M32 31a6 6 0 1 0 0-12 6 6 0 0 0 0 12Z" />
+    </symbol>
+  </svg>
+
+  <header class="site-header" id="siteHeader">
+    <nav class="nav-shell" aria-label="Primary navigation">
+      <a class="brand" href="#home" aria-label="J7 Fitness home">
+        <span class="brand-mark">J7</span>
+        <span class="brand-text">FITNESS</span>
+      </a>
+
+      <button class="nav-toggle" type="button" aria-label="Toggle navigation" aria-expanded="false">
+        <span></span><span></span><span></span>
+      </button>
+
+      <div class="nav-links" id="navLinks">
+        <a href="#home">Home</a>
+        <a href="#about">About</a>
+        <a href="#services">Services</a>
+        <a href="#training">Training</a>
+        <a href="#reviews">Reviews</a>
+        <a href="#contact">Contact</a>
+        <a class="btn btn-primary btn-nav" href="#contact" data-demo-action="Join enquiry opened">JOIN NOW</a>
+      </div>
+    </nav>
+  </header>
+
+  <main>
+    <section class="hero section" id="home">
+      <div class="hero-ambient" aria-hidden="true"></div>
+      <div class="container hero-grid">
+        <div class="hero-copy">
+          <p class="eyebrow reveal">Premium fitness club • Raipur</p>
+          <h1 class="hero-title reveal" style="--delay: .08s">
+            <span>TRAIN HARD.</span>
+            <span class="title-glow">LIVE STRONG.</span>
+          </h1>
+          <p class="hero-lede reveal" style="--delay: .16s">Experience premium fitness, advanced equipment and expert training at J7 Fitness, Raipur.</p>
+          <div class="hero-actions reveal" style="--delay: .24s">
+            <a class="btn btn-primary" href="#about">EXPLORE J7 FITNESS</a>
+            <a class="btn btn-ghost" href="#services">VIEW SERVICES</a>
+          </div>
+          <div class="hero-proof reveal" style="--delay: .32s" aria-label="J7 Fitness highlights">
+            <div>
+              <strong class="counter" data-target="4.8" data-decimals="1">0</strong><span>★ Rating</span>
+            </div>
+            <div>
+              <strong class="counter" data-target="361" data-suffix="+">0</strong><span>Reviews</span>
+            </div>
+            <div>
+              <strong>16+</strong><span>Fitness Experiences</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="hero-visual reveal" style="--delay: .18s" aria-label="Animated 3D gym visual">
+          <div class="scene-stage" data-tilt>
+            <div class="stage-scanline"></div>
+            <div class="stage-orbit orbit-one"></div>
+            <div class="stage-orbit orbit-two"></div>
+            <div class="light-beam beam-a"></div>
+            <div class="light-beam beam-b"></div>
+            <div class="light-beam beam-c"></div>
+            <div class="gym-scene">
+              <div class="back-wall">
+                <div class="wall-logo">J7</div>
+                <div class="wall-bars"></div>
+              </div>
+              <div class="stage-floor"></div>
+              <div class="rack machine">
+                <span class="rack-post post-left"></span>
+                <span class="rack-post post-right"></span>
+                <span class="rack-top"></span>
+                <span class="rack-bar"></span>
+                <span class="plate-stack stack-left"></span>
+                <span class="plate-stack stack-right"></span>
+              </div>
+              <div class="bench">
+                <span class="bench-pad"></span>
+                <span class="bench-leg leg-a"></span>
+                <span class="bench-leg leg-b"></span>
+              </div>
+              <div class="dumbbell-3d floating-layer" data-depth="18">
+                <span class="db-bar"></span>
+                <span class="db-plate db-l1"></span>
+                <span class="db-plate db-l2"></span>
+                <span class="db-plate db-r1"></span>
+                <span class="db-plate db-r2"></span>
+              </div>
+              <div class="kettlebell floating-layer" data-depth="10">
+                <span class="kb-handle"></span>
+                <span class="kb-body"></span>
+              </div>
+              <div class="boxing-bag floating-layer" data-depth="8">
+                <span class="bag-chain"></span>
+                <span class="bag-body"></span>
+              </div>
+              <div class="weight-plate floating-layer" data-depth="14"><span></span></div>
+            </div>
+          </div>
+
+          <div class="float-stat float-rating">
+            <span>4.8★</span>
+            <small>Rating</small>
+          </div>
+          <div class="float-stat float-reviews">
+            <span>361+</span>
+            <small>Reviews</small>
+          </div>
+          <div class="float-stat float-equipment">
+            <span>Modern</span>
+            <small>Equipment</small>
+          </div>
+        </div>
+      </div>
+      <a class="scroll-cue" href="#about" aria-label="Scroll to about section">
+        <span></span>
+        <small>SCROLL</small>
+      </a>
+    </section>
+
+    <section class="section about-section" id="about">
+      <div class="container about-grid">
+        <div class="about-media reveal" data-tilt>
+          <div class="photo-frame gym-photo">
+            <div class="photo-light photo-light-a"></div>
+            <div class="photo-light photo-light-b"></div>
+            <div class="photo-floor"></div>
+            <div class="photo-rack rack-a"></div>
+            <div class="photo-rack rack-b"></div>
+            <div class="photo-machine machine-a"></div>
+            <div class="photo-person silhouette-a"></div>
+            <div class="photo-person silhouette-b"></div>
+          </div>
+          <div class="mini-info info-a"><strong>Premium Training</strong><span>Focused coaching zones</span></div>
+          <div class="mini-info info-b"><strong>Advanced Equipment</strong><span>Modern strength + cardio</span></div>
+          <div class="mini-info info-c"><strong>Expert Trainers</strong><span>Motivating guidance</span></div>
+        </div>
+
+        <div class="section-copy">
+          <p class="eyebrow reveal">About J7 Fitness</p>
+          <h2 class="section-title reveal">MORE THAN A GYM.<br><span>IT’S A FITNESS EXPERIENCE.</span></h2>
+          <p class="section-text reveal">J7 Fitness brings together a modern, clean and motivating workout environment with knowledgeable trainers, advanced equipment and high-energy classes designed for every fitness level.</p>
+          <p class="section-text reveal">From strength training and personal coaching to MMA, boxing, yoga, Zumba and cycling, every space is designed to help members train with confidence and purpose.</p>
+          <div class="about-metrics reveal">
+            <div>
+              <strong class="counter" data-target="16" data-suffix="+">0</strong>
+              <span>Training experiences</span>
+            </div>
+            <div>
+              <strong class="counter" data-target="2" data-suffix=" floors">0</strong>
+              <span>Premium facility</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section services-section" id="services">
+      <div class="container">
+        <div class="section-header centered">
+          <p class="eyebrow reveal">Services</p>
+          <h2 class="section-title reveal">TRAIN YOUR WAY.</h2>
+          <p class="section-text reveal">Premium fitness formats built for strength, endurance, discipline, mobility and energy.</p>
+        </div>
+
+        <div class="services-grid">
+          <article class="service-card reveal" data-tilt>
+            <div class="service-icon"><svg><use href="#icon-dumbbell"></use></svg></div>
+            <h3>GYM</h3>
+            <p>Access a premium training floor with strength, functional and cardio zones.</p>
+            <button class="card-action" type="button" data-demo-action="Gym service preview">EXPLORE</button>
+          </article>
+          <article class="service-card reveal" data-tilt>
+            <div class="service-icon"><svg><use href="#icon-trainer"></use></svg></div>
+            <h3>PERSONAL TRAINING</h3>
+            <p>One-on-one coaching, technique correction and goal-focused programming.</p>
+            <button class="card-action" type="button" data-demo-action="Personal training preview">EXPLORE</button>
+          </article>
+          <article class="service-card reveal" data-tilt>
+            <div class="service-icon"><svg><use href="#icon-fight"></use></svg></div>
+            <h3>MMA</h3>
+            <p>Build discipline, power and conditioning with mixed martial arts training.</p>
+            <button class="card-action" type="button" data-demo-action="MMA preview">EXPLORE</button>
+          </article>
+          <article class="service-card reveal" data-tilt>
+            <div class="service-icon"><svg><use href="#icon-boxing"></use></svg></div>
+            <h3>BOXING</h3>
+            <p>Improve footwork, striking, speed and endurance in an energetic boxing setup.</p>
+            <button class="card-action" type="button" data-demo-action="Boxing preview">EXPLORE</button>
+          </article>
+          <article class="service-card reveal" data-tilt>
+            <div class="service-icon"><svg><use href="#icon-kick"></use></svg></div>
+            <h3>KICKBOXING</h3>
+            <p>High-intensity striking workouts for coordination, core strength and stamina.</p>
+            <button class="card-action" type="button" data-demo-action="Kickboxing preview">EXPLORE</button>
+          </article>
+          <article class="service-card reveal" data-tilt>
+            <div class="service-icon"><svg><use href="#icon-crossfit"></use></svg></div>
+            <h3>CROSSFIT</h3>
+            <p>Functional fitness workouts combining power, conditioning and athletic movement.</p>
+            <button class="card-action" type="button" data-demo-action="CrossFit preview">EXPLORE</button>
+          </article>
+          <article class="service-card reveal" data-tilt>
+            <div class="service-icon"><svg><use href="#icon-music"></use></svg></div>
+            <h3>ZUMBA</h3>
+            <p>Dance-powered cardio classes with energy, rhythm and community motivation.</p>
+            <button class="card-action" type="button" data-demo-action="Zumba preview">EXPLORE</button>
+          </article>
+          <article class="service-card reveal" data-tilt>
+            <div class="service-icon"><svg><use href="#icon-yoga"></use></svg></div>
+            <h3>YOGA</h3>
+            <p>Improve mobility, control, breathing and recovery with guided yoga sessions.</p>
+            <button class="card-action" type="button" data-demo-action="Yoga preview">EXPLORE</button>
+          </article>
+          <article class="service-card reveal" data-tilt>
+            <div class="service-icon"><svg><use href="#icon-music"></use></svg></div>
+            <h3>DANCE FITNESS</h3>
+            <p>Expressive movement classes designed to burn calories while keeping it fun.</p>
+            <button class="card-action" type="button" data-demo-action="Dance fitness preview">EXPLORE</button>
+          </article>
+          <article class="service-card reveal" data-tilt>
+            <div class="service-icon"><svg><use href="#icon-dumbbell"></use></svg></div>
+            <h3>WEIGHT TRAINING</h3>
+            <p>Progressive strength workouts using free weights, machines and guided form.</p>
+            <button class="card-action" type="button" data-demo-action="Weight training preview">EXPLORE</button>
+          </article>
+          <article class="service-card reveal" data-tilt>
+            <div class="service-icon"><svg><use href="#icon-pulse"></use></svg></div>
+            <h3>AEROBICS</h3>
+            <p>Classic cardio conditioning with rhythm, movement and structured intensity.</p>
+            <button class="card-action" type="button" data-demo-action="Aerobics preview">EXPLORE</button>
+          </article>
+          <article class="service-card reveal" data-tilt>
+            <div class="service-icon"><svg><use href="#icon-bike"></use></svg></div>
+            <h3>CYCLING</h3>
+            <p>Indoor cycling sessions built for sweat, stamina and music-driven performance.</p>
+            <button class="card-action" type="button" data-demo-action="Cycling preview">EXPLORE</button>
+          </article>
+        </div>
+
+        <div class="service-ribbon reveal">
+          <span>Youth Sports</span>
+          <span>Youth Classes</span>
+          <span>Self-defense</span>
+          <span>Locker Room</span>
+          <span>Modern Fitness Equipment</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="section combat-section" id="training">
+      <div class="container combat-wrap reveal">
+        <div class="combat-copy">
+          <p class="eyebrow">Featured Training</p>
+          <h2 class="combat-title">MMA • BOXING • KICKBOXING</h2>
+          <p>BUILD STRENGTH. MASTER DISCIPLINE.</p>
+          <a href="#contact" class="btn btn-primary" data-demo-action="Combat training enquiry">EXPLORE COMBAT TRAINING</a>
+        </div>
+        <div class="combat-visual" aria-hidden="true">
+          <div class="speed-line line-1"></div>
+          <div class="speed-line line-2"></div>
+          <div class="speed-line line-3"></div>
+          <div class="combat-floor"></div>
+          <div class="fighter-card fighter-a"><span></span></div>
+          <div class="fighter-card fighter-b"><span></span></div>
+          <div class="heavy-bag"><span></span></div>
+          <div class="combat-glove glove-a"></div>
+          <div class="combat-glove glove-b"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section personal-section">
+      <div class="container personal-grid">
+        <div class="section-copy">
+          <p class="eyebrow reveal">Personal Training</p>
+          <h2 class="section-title reveal">YOUR GOAL.<br>YOUR PLAN.<br><span>YOUR TRAINER.</span></h2>
+          <p class="section-text reveal">Premium coaching UI designed around clarity, progress and consistency — showing how J7 Fitness can visually present personal training programs in a client-facing website.</p>
+        </div>
+
+        <div class="trainer-cards">
+          <article class="trainer-card reveal" data-tilt>
+            <div class="trainer-top">
+              <div class="trainer-avatar"></div>
+              <span>01</span>
+            </div>
+            <h3>Personal Training</h3>
+            <p>Individual attention for safer lifts, better form and smarter routines.</p>
+            <div class="progress-line"><span style="width: 86%"></span></div>
+          </article>
+          <article class="trainer-card reveal" data-tilt>
+            <div class="trainer-top">
+              <div class="trainer-avatar avatar-alt"></div>
+              <span>02</span>
+            </div>
+            <h3>Expert Guidance</h3>
+            <p>Knowledgeable trainers keep every workout purposeful and motivating.</p>
+            <div class="progress-line"><span style="width: 78%"></span></div>
+          </article>
+          <article class="trainer-card reveal" data-tilt>
+            <div class="trainer-top">
+              <div class="trainer-avatar avatar-third"></div>
+              <span>03</span>
+            </div>
+            <h3>Customized Workouts</h3>
+            <p>Plans tailored for fat loss, muscle gain, mobility or athletic performance.</p>
+            <div class="progress-line"><span style="width: 92%"></span></div>
+          </article>
+          <article class="trainer-card reveal" data-tilt>
+            <div class="trainer-top">
+              <div class="trainer-avatar avatar-fourth"></div>
+              <span>04</span>
+            </div>
+            <h3>Progress Focused Training</h3>
+            <p>Visual milestones and habit tracking designed to keep momentum high.</p>
+            <div class="progress-line"><span style="width: 88%"></span></div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section equipment-section">
+      <div class="container">
+        <div class="section-header">
+          <p class="eyebrow reveal">Equipment</p>
+          <h2 class="section-title reveal">ADVANCED EQUIPMENT.<br><span>SERIOUS RESULTS.</span></h2>
+        </div>
+        <div class="equipment-track" aria-label="Equipment categories">
+          <article class="equipment-card reveal" data-tilt>
+            <div class="equipment-art strength-art"></div>
+            <div class="equipment-content">
+              <span>01</span>
+              <h3>Strength Equipment</h3>
+              <p>Premium racks, free weights and machine-based resistance zones.</p>
+            </div>
+          </article>
+          <article class="equipment-card reveal" data-tilt>
+            <div class="equipment-art cardio-art"></div>
+            <div class="equipment-content">
+              <span>02</span>
+              <h3>Cardio Equipment</h3>
+              <p>Modern treadmills, cycling and endurance-focused training options.</p>
+            </div>
+          </article>
+          <article class="equipment-card reveal" data-tilt>
+            <div class="equipment-art functional-art"></div>
+            <div class="equipment-content">
+              <span>03</span>
+              <h3>Functional Training</h3>
+              <p>Dynamic movement zones for conditioning, stability and athletic power.</p>
+            </div>
+          </article>
+          <article class="equipment-card reveal" data-tilt>
+            <div class="equipment-art machine-art"></div>
+            <div class="equipment-content">
+              <span>04</span>
+              <h3>Modern Machines</h3>
+              <p>Sleek, well-maintained machines for targeted, confidence-building workouts.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section why-section">
+      <div class="container">
+        <div class="section-header centered">
+          <p class="eyebrow reveal">Why J7 Fitness</p>
+          <h2 class="section-title reveal">BUILT FOR PEOPLE WHO TRAIN WITH PURPOSE.</h2>
+        </div>
+        <div class="why-grid">
+          <article class="why-card reveal" data-tilt>
+            <div class="why-icon"><svg><use href="#icon-dumbbell"></use></svg></div>
+            <h3>ADVANCED EQUIPMENT</h3>
+            <p>Modern fitness equipment to support serious training and everyday progress.</p>
+          </article>
+          <article class="why-card reveal" data-tilt>
+            <div class="why-icon"><svg><use href="#icon-spark"></use></svg></div>
+            <h3>MODERN FACILITY</h3>
+            <p>A clean, premium environment with strong lighting and focused workout spaces.</p>
+          </article>
+          <article class="why-card reveal" data-tilt>
+            <div class="why-icon"><svg><use href="#icon-trainer"></use></svg></div>
+            <h3>SUPPORTIVE TRAINERS</h3>
+            <p>Knowledgeable coaching to make training safer, smarter and more consistent.</p>
+          </article>
+          <article class="why-card reveal" data-tilt>
+            <div class="why-icon"><svg><use href="#icon-pulse"></use></svg></div>
+            <h3>MOTIVATING ENVIRONMENT</h3>
+            <p>High energy classes, community support and a premium atmosphere.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section reviews-section" id="reviews">
+      <div class="container reviews-grid">
+        <div class="review-score reveal" data-tilt>
+          <p class="eyebrow">Reviews</p>
+          <strong><span class="counter" data-target="4.8" data-decimals="1">0</span><small>/ 5</small></strong>
+          <div class="stars" aria-label="4.8 out of 5 stars">★★★★★</div>
+          <p><span class="counter" data-target="361" data-suffix=" Reviews">0</span></p>
+        </div>
+        <div class="reviews-copy">
+          <div class="section-header">
+            <h2 class="section-title reveal">WHAT MEMBERS SAY</h2>
+            <p class="section-text reveal">Review-inspired demo cards showcasing the trust signals J7 Fitness can highlight online.</p>
+          </div>
+          <div class="review-cards">
+            <article class="review-card reveal" data-tilt>
+              <div class="stars">★★★★★</div>
+              <p>“Great experience. The equipment is clean, modern and well-maintained. The trainers are supportive and knowledgeable.”</p>
+              <span>Member Review</span>
+            </article>
+            <article class="review-card reveal" data-tilt>
+              <div class="stars">★★★★★</div>
+              <p>“The environment feels motivating and premium. Perfect for strength training, cardio and fitness classes.”</p>
+              <span>Google Review Inspired</span>
+            </article>
+            <article class="review-card reveal" data-tilt>
+              <div class="stars">★★★★★</div>
+              <p>“A clean facility with helpful trainers and great workout energy. J7 Fitness feels professional from the first visit.”</p>
+              <span>Local Member</span>
+            </article>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section contact-section" id="contact">
+      <div class="container contact-grid">
+        <div class="contact-copy">
+          <p class="eyebrow reveal">Location / Contact</p>
+          <h2 class="section-title reveal">FIND YOUR FITNESS SPACE.</h2>
+          <div class="contact-card reveal" data-tilt>
+            <h3>J7 Fitness</h3>
+            <p>2nd &amp; 3rd Floor, VIP Estate, VIP Tower,<br>beside Over Bridge, Shankar Nagar,<br>Raipur, Chhattisgarh 492001</p>
+            <a class="phone-link" href="tel:+918982605600">089826 05600</a>
+            <div class="contact-actions">
+              <a class="btn btn-primary" href="tel:+918982605600" data-demo-action="Phone number ready">CALL NOW</a>
+              <button class="btn btn-ghost" type="button" data-demo-action="Directions UI opened">GET DIRECTIONS</button>
+            </div>
+            <small>Frontend demo only — buttons are visual interactions.</small>
+          </div>
+        </div>
+
+        <div class="map-ui reveal" data-tilt aria-label="Stylized map interface for J7 Fitness location">
+          <div class="map-grid-lines"></div>
+          <div class="map-route route-a"></div>
+          <div class="map-route route-b"></div>
+          <div class="map-tower tower-a"></div>
+          <div class="map-tower tower-b"></div>
+          <div class="map-pin">
+            <svg><use href="#icon-map"></use></svg>
+            <span>J7 FITNESS</span>
+          </div>
+          <div class="map-panel">
+            <strong>VIP Tower</strong>
+            <span>Shankar Nagar • Raipur</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="final-cta section">
+      <div class="container cta-panel reveal" data-tilt>
+        <p class="eyebrow">Start Today</p>
+        <h2>READY TO BECOME STRONGER?</h2>
+        <p>Your next level starts here.</p>
+        <a href="#contact" class="btn btn-primary btn-xl" data-demo-action="Join J7 Fitness CTA">JOIN J7 FITNESS</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <div class="container footer-grid">
+      <div>
+        <a class="brand footer-brand" href="#home">
+          <span class="brand-mark">J7</span>
+          <span class="brand-text">FITNESS</span>
+        </a>
+        <p>Premium fitness, advanced equipment and expert training in Raipur.</p>
+      </div>
+      <div>
+        <h3>Links</h3>
+        <a href="#home">Home</a>
+        <a href="#about">About</a>
+        <a href="#services">Services</a>
+        <a href="#training">Training</a>
+        <a href="#reviews">Reviews</a>
+        <a href="#contact">Contact</a>
+      </div>
+      <div>
+        <h3>Location</h3>
+        <p>2nd &amp; 3rd Floor, VIP Estate, VIP Tower, beside Over Bridge, Shankar Nagar, Raipur, Chhattisgarh 492001</p>
+        <a href="tel:+918982605600">089826 05600</a>
+      </div>
+      <div>
+        <h3>Social</h3>
+        <div class="socials" aria-label="Social media placeholders">
+          <button type="button" data-demo-action="Instagram placeholder">IG</button>
+          <button type="button" data-demo-action="Facebook placeholder">FB</button>
+          <button type="button" data-demo-action="YouTube placeholder">YT</button>
+        </div>
+      </div>
+    </div>
+    <div class="container footer-bottom">
+      <span>© 2026 J7 Fitness UI Demo.</span>
+      <span>Frontend concept only • No backend integrations.</span>
+    </div>
+  </footer>
+
+  <div class="demo-toast" role="status" aria-live="polite">
+    <span></span>
+  </div>
+
+  <script src="script.js" defer></script>
+</body>
+</html>
