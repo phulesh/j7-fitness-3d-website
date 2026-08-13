@@ -348,12 +348,23 @@ function hydrate(row: any, withChildren: boolean): EbookDocument {
       )
     : [];
   const language = row.outputLanguage || row.language || row.settings?.language || "en";
+  // Keep settings.language in sync with the resolved output language. This is
+  // what drives the Edit dropdown: a book that resolved to Hindi must never
+  // display "Auto Detect Language" simply because a stale settings.language was
+  // persisted as "auto". We only treat "auto" as intentional when there is no
+  // resolved concrete language on the record.
+  const resolvedSettings = { ...(row.settings || {}) };
+  if (language && language !== "auto") {
+    resolvedSettings.language = language;
+    resolvedSettings.outputLanguage = language;
+  }
   return {
     ...row,
     id,
     ebookId: row.ebookId || id,
     language,
     outputLanguage: row.outputLanguage || language,
+    settings: resolvedSettings,
     customTitle: row.customTitle || row.settings?.customTitle || row.settings?.title,
     researchQuestions: row.researchQuestions || row.analysis?.researchQuestions || row.settings?.researchQuestions || [],
     outline: (row.outline || []).map((o: OutlineItem) => ({

@@ -11,19 +11,52 @@ import { api, ensureSession } from "@/lib/client";
 import { Upload } from "lucide-react";
 import { nanoid } from "nanoid";
 
+const DRAFT_KEY = "folio:create-draft";
+
+function loadDraft(): EbookSettings {
+  // Persist the user's selected values across refresh, back navigation, and
+  // failed requests. Topic from the URL takes priority so shared links still
+  // pre-fill correctly. We never persist empty/default noise: if nothing was
+  // stored, fall back to defaults.
+  try {
+    const raw = typeof window !== "undefined" ? window.localStorage.getItem(DRAFT_KEY) : null;
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        return { ...DEFAULT_SETTINGS, ...parsed };
+      }
+    }
+  } catch {
+    /* storage unavailable — ignore */
+  }
+  return { ...DEFAULT_SETTINGS };
+}
+
 function NewInner() {
   const params = useSearchParams();
   const router = useRouter();
   const createKey = useRef(nanoid(16));
   const creating = useRef(false);
-  const [settings, setSettings] = useState<EbookSettings>({
-    ...DEFAULT_SETTINGS,
-    topic: params.get("topic") || "",
+  const [settings, setSettings] = useState<EbookSettings>(() => {
+    const draft = loadDraft();
+    const topicParam = params.get("topic");
+    return { ...draft, topic: topicParam || draft.topic || "" };
   });
   const [syllabusText, setSyllabusText] = useState("");
   const [syllabus, setSyllabus] = useState<SyllabusInfo | null>(null);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+
+  // Keep the draft in sync with the user's selections so that refresh,
+  // accidental back navigation, or a failed create request never resets the
+  // form (including the chosen output language).
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(DRAFT_KEY, JSON.stringify(settings));
+    } catch {
+      /* ignore quota / private mode */
+    }
+  }, [settings]);
 
   useEffect(() => {
     ensureSession().catch(() => {});
@@ -79,6 +112,14 @@ function NewInner() {
       const id = (created.ebook.ebookId || created.ebook.id) as string;
       if (syl) {
         await api(`/api/ebooks/${id}`, { method: "PATCH", body: JSON.stringify({ syllabus: syl }) });
+      }
+      // The record now lives under its permanent ebookId. Clear the local
+      // draft so the next intentional "Create New Ebook" starts fresh and does
+      // not silently reuse stale values.
+      try {
+        window.localStorage.removeItem(DRAFT_KEY);
+      } catch {
+        /* ignore */
       }
       router.replace(`/ebooks/${id}/edit?tab=settings`);
     } catch (e: any) {

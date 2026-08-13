@@ -71,9 +71,18 @@ export async function POST(req: Request) {
   }
   if (settings.customTitle && !settings.title) settings.title = settings.customTitle;
 
-  const recent = findRecentDuplicateDraft(auth.user.id, settings.topic);
-  if (recent) {
-    return json({ ebook: clientEbook(recent), reused: true });
+  // A fresh Idempotency-Key means the client deliberately started a new Create
+  // (a brand-new page mount), so we must NOT silently reuse a recent draft of
+  // the same topic — that is how a user intentionally commissions a second
+  // volume on the same subject (TEST 11). The recent-duplicate-draft guard only
+  // applies to keyless requests, which is a safety net for double-submits that
+  // did not carry an idempotency key. Double-clicks from the same page mount
+  // share one key and are already deduplicated by the operation lookup above.
+  if (!idempotencyKey) {
+    const recent = findRecentDuplicateDraft(auth.user.id, settings.topic);
+    if (recent) {
+      return json({ ebook: clientEbook(recent), reused: true });
+    }
   }
 
   const ebook = createEbook(auth.user.id, settings);

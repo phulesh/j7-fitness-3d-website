@@ -75,16 +75,31 @@ async function generateEbook(ebookId: string, jobId: string, opts: { resume?: bo
     ? "hi"
     : analysis.outputLanguage;
   analysis.outputLanguage = outputLanguage;
+  // Resolve the title ONCE and reuse it everywhere (cover + both updates).
+  // The user's explicit title — whether typed on the Create form, edited on the
+  // Cover/Settings tab, or set via the API — must survive research and never be
+  // silently overwritten by the English normalizedTitle. For a Hindi book this
+  // is what keeps Devanagari on the cover. analysis.normalizedTitle is only a
+  // fallback when the user supplied no title at all.
+  const resolvedTitle = (
+    doc.customTitle?.trim() ||
+    doc.settings.customTitle?.trim() ||
+    doc.title?.trim() ||
+    doc.settings.title?.trim() ||
+    analysis.normalizedTitle ||
+    ""
+  ).trim();
+  const resolvedSubtitle = doc.settings.subtitle?.trim() || doc.subtitle?.trim() || analysis.subtitle || "";
   updateEbook(ebookId, {
     analysis,
-    title: doc.settings.customTitle?.trim() || doc.settings.title?.trim() || analysis.normalizedTitle,
-    customTitle: doc.settings.customTitle || doc.settings.title,
-    subtitle: doc.settings.subtitle?.trim() || analysis.subtitle,
+    title: resolvedTitle,
+    customTitle: doc.customTitle || doc.settings.customTitle || resolvedTitle,
+    subtitle: resolvedSubtitle,
     language: outputLanguage,
     outputLanguage,
     researchQuestions: analysis.researchQuestions || doc.researchQuestions || [],
     lastCompletedStage: "settings",
-    settings: { ...doc.settings, language: outputLanguage, outputLanguage },
+    settings: { ...doc.settings, title: resolvedTitle, language: outputLanguage, outputLanguage },
   });
 
   progress("researching", 12, "Finding reliable sources...", "researching", analysis.searchQueries.slice(0, 3).join(" · "));
@@ -108,8 +123,8 @@ async function generateEbook(ebookId: string, jobId: string, opts: { resume?: bo
     "Research is not clean enough to write this ebook.";
 
   const cover = coverSvg({
-    title: analysis.normalizedTitle,
-    subtitle: analysis.subtitle,
+    title: resolvedTitle,
+    subtitle: resolvedSubtitle,
     author: doc.settings.includeAuthor ? doc.settings.authorName || "Folio Research" : "",
     style: doc.settings.coverStyle,
     language: analysis.outputLanguage,
@@ -131,8 +146,8 @@ async function generateEbook(ebookId: string, jobId: string, opts: { resume?: bo
     rejectedSources: bundle.rejectedSources,
     researchQuality: bundle.researchQuality,
     facts: bundle.facts,
-    title: analysis.normalizedTitle,
-    subtitle: analysis.subtitle,
+    title: resolvedTitle,
+    subtitle: resolvedSubtitle,
     language: analysis.outputLanguage,
     chapterCount: outline.length,
     status: blocked ? "awaiting_outline" : opts.skipOutlineWait ? "writing" : "awaiting_outline",

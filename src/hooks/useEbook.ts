@@ -32,6 +32,9 @@ export function useEbook(ebookId: string) {
       const t = setInterval(() => load().catch(() => {}), 1400);
       return () => clearInterval(t);
     }
+    // Intentionally only re-run when the status changes: depending on `doc`
+    // would tear down and recreate the polling interval on every poll tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc?.status, load]);
 
   const patch = useCallback(
