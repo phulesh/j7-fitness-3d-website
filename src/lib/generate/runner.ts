@@ -10,6 +10,10 @@ import { isHindiOutput } from "../language";
 import { documentNeedsHindiRegen, ensureHindiChapter, localizeOutline } from "./hindi";
 import { friendlyError } from "../errors";
 import { runFinalQualityCheck } from "./quality";
+import { ACHHOOT_HINDI_TITLES, isAchhootResearchTopic } from "./outline";
+import { augmentAchhootSources } from "./achhoot";
+import { nextSourceId } from "../db";
+import { buildResearchQuality } from "../research/relevance";
 
 const RESEARCH_TIMEOUT_MS = Number(process.env.RESEARCH_TIMEOUT_MS || 7 * 60 * 1000);
 
@@ -27,6 +31,31 @@ function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promi
       }
     );
   });
+}
+
+function addCanonicalAchhootSources(topic: string, sources: EbookDocument["sources"]) {
+  if (!isAchhootResearchTopic(topic)) return sources;
+  return augmentAchhootSources(sources, nextSourceId);
+}
+
+function exactAchhootOutline(topic: string, outline: OutlineItem[]) {
+  if (!isAchhootResearchTopic(topic)) return outline;
+  return outline.slice(0, 14).map((item, index) => ({ ...item, title: ACHHOOT_HINDI_TITLES[index] || item.title }));
+}
+
+function prepareCanonicalAchhootBundle(
+  topic: string,
+  bundle: {
+    sources: EbookDocument["sources"];
+    rejectedSources: Parameters<typeof buildResearchQuality>[1];
+    researchQuality: ReturnType<typeof buildResearchQuality>;
+    insufficient: boolean;
+  }
+) {
+  if (!isAchhootResearchTopic(topic)) return;
+  bundle.sources = addCanonicalAchhootSources(topic, bundle.sources);
+  bundle.researchQuality = buildResearchQuality(bundle.sources, bundle.rejectedSources);
+  bundle.insufficient = bundle.researchQuality.generationBlocked;
 }
 
 function researchCopy(hindi: boolean) {
@@ -219,6 +248,7 @@ async function researchEbook(
     RESEARCH_TIMEOUT_MS,
     copy.timeout
   );
+  prepareCanonicalAchhootBundle(analysis.topic, bundle);
 
   if (consumeCancel(ebookId)) {
     updateEbook(ebookId, {
@@ -243,7 +273,7 @@ async function researchEbook(
     fresh.outline.length && !opts.forceOutline
       ? fresh.outline
       : buildOutlineFromResearch(fresh.settings, analysis, bundle, syllabus);
-  const outline = localizeOutline(rawOutline, outputLanguage);
+  const outline = exactAchhootOutline(analysis.topic, localizeOutline(rawOutline, outputLanguage));
 
   setRun(
     { percent: 48, message: hindi ? "अध्यायों पर शोध चल रहा है…" : "Researching chapters…", sourcesFound: bundle.sources.length },
@@ -437,6 +467,7 @@ async function generateEbook(
   const bundle = await runResearch(ebookId, analysis, doc.settings, (msg) => {
     progress("researching", 20, "Finding reliable sources...", "researching", msg);
   });
+  prepareCanonicalAchhootBundle(analysis.topic, bundle);
 
   progress("verifying_sources", 30, "Verifying sources and provenance...", "researching", `${bundle.sources.length} reliable sources retained; ${bundle.rejectedSources.length} rejected`);
   progress("outlining", 38, "Building a topic-specific chapter outline...", "outlining");
@@ -455,7 +486,7 @@ async function generateEbook(
     doc.outline.length && !opts.forceOutline
       ? doc.outline
       : buildOutlineFromResearch(doc.settings, analysis, bundle, syllabus);
-  const outline = localizeOutline(rawOutline, outputLanguage);
+  const outline = exactAchhootOutline(analysis.topic, localizeOutline(rawOutline, outputLanguage));
 
   const blocked = bundle.researchQuality?.generationBlocked || bundle.insufficient;
   const blockMsg =
@@ -544,6 +575,12 @@ export async function continueFromOutline(ebookId: string, jobId: string) {
 async function continueFromOutlineInner(ebookId: string, jobId: string) {
   const doc = getEbook(ebookId);
   if (!doc || !doc.analysis) throw new Error("Research the topic first.");
+  if (isAchhootResearchTopic(doc.analysis.topic)) {
+    doc.sources = addCanonicalAchhootSources(doc.analysis.topic, doc.sources);
+    doc.outline = exactAchhootOutline(doc.analysis.topic, doc.outline);
+    doc.researchQuality = buildResearchQuality(doc.sources, doc.rejectedSources || []);
+    updateEbook(doc.id, { sources: doc.sources, outline: doc.outline, researchQuality: doc.researchQuality, error: undefined });
+  }
   if (doc.researchQuality?.generationBlocked) {
     const msg =
       doc.researchQuality.contaminationReason ||
@@ -564,8 +601,10 @@ async function continueFromOutlineInner(ebookId: string, jobId: string) {
     category: doc.analysis.category,
     type: doc.settings.type,
   });
+  const canonicalSources = addCanonicalAchhootSources(doc.analysis.topic, doc.sources);
+  if (canonicalSources.length !== doc.sources.length) updateEbook(doc.id, { sources: canonicalSources });
   const bundle = {
-    sources: doc.sources,
+    sources: canonicalSources,
     rejectedSources: doc.rejectedSources || [],
     researchQuality: doc.researchQuality,
     facts: doc.facts || [],
@@ -607,15 +646,23 @@ async function continueFromOutlineInner(ebookId: string, jobId: string) {
 
 async function writeRemaining(doc: EbookDocument, jobId: string) {
   const start = Math.max(0, ...doc.chapters.filter((c) => c.status === "complete").map((c) => c.index + 1));
-  updateEbook(doc.id, { status: "writing", progress: { step: "writing", percent: 50, message: "Resuming from last completed chapter..." } });
+  const topic = doc.analysis?.topic || doc.settings.topic;
+  const canonicalSources = addCanonicalAchhootSources(topic, doc.sources);
+  const outline = exactAchhootOutline(topic, doc.outline);
+  updateEbook(doc.id, {
+    status: "writing",
+    sources: canonicalSources,
+    outline,
+    progress: { step: "writing", percent: 50, message: "Resuming from last completed chapter..." },
+  });
   const bundle = {
-    sources: doc.sources,
+    sources: canonicalSources,
     facts: doc.facts || [],
     wikiPages: [] as never[],
     images: [] as never[],
     insufficient: false,
   } as any;
-  await writeChapters(doc, jobId, bundle, start);
+  await writeChapters({ ...doc, sources: canonicalSources, outline }, jobId, bundle, start);
 }
 
 async function writeChapters(doc: EbookDocument, jobId: string, bundle: any, startIndex = 0) {
@@ -774,11 +821,22 @@ export async function regenerateChapter(ebookId: string, chapterIndex: number, i
   const item = doc.outline[chapterIndex];
   if (!item) throw new Error("Chapter not found");
   if (instruction) item.summary = `${item.summary}\n\nEditor instruction: ${instruction}`;
+  const canonicalSources = addCanonicalAchhootSources(doc.analysis.topic, doc.sources);
+  if (canonicalSources.length !== doc.sources.length) updateEbook(doc.id, { sources: canonicalSources });
+  const commons = doc.settings.includeImages ? await maybeChapterImages(`${doc.title} ${item.title}`, true) : [];
+  const visuals = await buildChapterVisuals({
+    ebookId: doc.id,
+    chapterIndex,
+    item,
+    lang: doc.analysis.outputLanguage || doc.language,
+    commons,
+    includeImages: Boolean(doc.settings.includeImages),
+  });
   const bundle = {
-    sources: doc.sources,
+    sources: canonicalSources,
     facts: doc.facts || [],
     wikiPages: [],
-    images: doc.settings.includeImages ? await maybeChapterImages(`${doc.title} ${item.title}`, true) : [],
+    images: visuals,
     insufficient: false,
   } as any;
   const ch = await writeChapter({
@@ -791,8 +849,8 @@ export async function regenerateChapter(ebookId: string, chapterIndex: number, i
   });
   const chapters = doc.chapters.slice();
   chapters[chapterIndex] = ch;
-  saveChapter(ebookId, ch);
   insertFiguresIntoChapter(ch, doc.analysis.outputLanguage || doc.language);
+  saveChapter(ebookId, ch);
   updateEbook(ebookId, {
     chapters,
     wordCount: chapters.reduce((n, c) => n + (c?.wordCount || 0), 0),
@@ -820,9 +878,12 @@ export function regenerateOutlineForEbook(ebookId: string) {
     insufficient: false,
     profile: undefined,
   };
-  const outline = localizeOutline(
-    buildOutlineFromResearch(doc.settings, doc.analysis, bundle as any, doc.syllabus),
-    doc.outputLanguage || doc.language
+  const outline = exactAchhootOutline(
+    doc.analysis.topic,
+    localizeOutline(
+      buildOutlineFromResearch(doc.settings, doc.analysis, bundle as any, doc.syllabus),
+      doc.outputLanguage || doc.language
+    )
   );
   updateEbook(ebookId, {
     outline,

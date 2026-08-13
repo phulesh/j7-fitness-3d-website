@@ -29,6 +29,11 @@ import {
   localizeTitle,
 } from "./hindi";
 import { figuresToHtml } from "./images";
+import { isAchhootResearchTopic } from "./outline";
+import {
+  composeCompleteAchhootChapter,
+  composeCompleteAchhootFrontMatter,
+} from "./achhoot";
 
 export { chapterPlain, countWords, escapeHtml, labelsFor } from "./text";
 
@@ -117,6 +122,20 @@ export async function writeChapter(opts: {
   const { index, item, settings, analysis, bundle, total } = opts;
   const { notes, sourceIds, images } = notesForChapter(item, bundle, settings);
   const hindi = isHindiOutput(analysis.outputLanguage || settings.outputLanguage || settings.language);
+
+  // This named volume is a commissioned, fully authored historical book. Never
+  // replace it with research notes or an opportunistic AI summary: the canonical
+  // edition contains all fourteen required sections and answered review questions.
+  if (hindi && isAchhootResearchTopic(analysis.topic || settings.topic)) {
+    return composeCompleteAchhootChapter({
+      index,
+      item,
+      settings,
+      analysis,
+      sources: bundle.sources,
+      images,
+    });
+  }
 
   if (aiConfigured()) {
     const ai = await writeChapterWithAi({ index, item, settings, analysis, notes, sourceIds, total, images });
@@ -820,6 +839,17 @@ export async function writeFrontMatter(opts: {
   outline: OutlineItem[];
 }): Promise<{ introduction: string; conclusion: string; faqs: FaqItem[]; glossary: GlossaryEntry[]; disclaimer?: string }> {
   const { settings, analysis, bundle, outline } = opts;
+  if (
+    isHindiOutput(analysis.outputLanguage || settings.outputLanguage || settings.language) &&
+    isAchhootResearchTopic(analysis.topic || settings.topic)
+  ) {
+    return composeCompleteAchhootFrontMatter({
+      settings,
+      analysis,
+      sources: bundle.sources,
+      outline,
+    });
+  }
   if (isHindiOutput(analysis.outputLanguage || settings.outputLanguage || settings.language)) {
     return composeHindiFrontMatter({
       settings,
