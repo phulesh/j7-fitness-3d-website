@@ -199,6 +199,42 @@ export function saveChapter(ebookId: string, ch: Chapter) {
   persist();
 }
 
+export function duplicateEbook(id: string, userId: string): EbookDocument | null {
+  const src = getEbook(id, userId);
+  if (!src) return null;
+  const copy = createEbook(userId, {
+    ...src.settings,
+    title: `${src.title} (copy)`.slice(0, 200),
+    customTitle: `${src.customTitle || src.title} (copy)`.slice(0, 200),
+  });
+  updateEbook(copy.id, {
+    title: `${src.title} (copy)`.slice(0, 200),
+    customTitle: `${src.customTitle || src.title} (copy)`.slice(0, 200),
+    subtitle: src.subtitle,
+    outline: src.outline,
+    introduction: src.introduction,
+    conclusion: src.conclusion,
+    chapters: src.chapters,
+    glossary: src.glossary,
+    faqs: src.faqs,
+    sources: src.sources,
+    facts: src.facts,
+    cover: src.cover,
+    analysis: src.analysis,
+    syllabus: src.syllabus,
+    disclaimer: src.disclaimer,
+    status: src.status === "complete" ? "complete" : "draft",
+    wordCount: src.wordCount,
+    chapterCount: src.chapterCount || src.chapters.length,
+    lastCompletedStage: src.lastCompletedStage,
+    progress:
+      src.status === "complete"
+        ? { step: "complete", percent: 100, message: "Ready" }
+        : { step: "draft", percent: 0, message: "Duplicated draft" },
+  });
+  return getEbook(copy.id, userId);
+}
+
 export function deleteEbook(id: string, userId: string) {
   const store = getStore();
   const before = store.ebooks.length;

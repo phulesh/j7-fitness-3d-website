@@ -1,6 +1,8 @@
 # Folio — research-based ebook generator
 
-Turn any topic, syllabus, or course into a cited ebook. Folio searches the live web, ranks sources (government and official first), extracts facts, builds an outline you can edit, then writes chapters with numbered references. Download PDF, DOCX, or EPUB. Hindi, English, and 20+ languages with Unicode fonts.
+Turn any topic into a cited ebook in one click. Enter a subject — Folio researches reliable sources, writes chapters, builds a cover, and opens a 3D book preview. Download PDF, DOCX, EPUB, Markdown, or TXT. Hindi, English, Hinglish, and 20+ languages.
+
+The default experience is beginner-friendly: topic → a few simple choices → full book. Advanced research, sources, and outline tools remain available in Advanced Mode. Existing ebooks are kept.
 
 This is not a mock. The source list is the set of URLs the server actually retrieved.
 

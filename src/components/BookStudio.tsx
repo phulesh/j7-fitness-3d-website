@@ -249,7 +249,7 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
     <div className="mx-auto max-w-6xl px-4 py-8">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <p className="stamp text-gold-500">ebookId · {ebookId}</p>
+          <p className="stamp text-gold-500">Advanced studio</p>
           <h1 className="font-display mt-3 text-3xl">
             {doc?.title || (loadState === "error" ? "Could not open ebook" : loading ? "Loading ebook…" : "Ebook")}
           </h1>
@@ -458,7 +458,7 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
           <div className="paper-card rounded-2xl p-5">
             <h2 className="font-display text-xl">Research</h2>
             <p className="mt-1 text-xs uppercase tracking-[0.16em] text-gold-500">
-              ebookId · {ebookId} · {researchState}
+              {researchState === "running" ? "शोध चल रहा है" : "शोध"}
             </p>
             <p className="mt-3 text-sm">
               {doc.researchRun?.message ||

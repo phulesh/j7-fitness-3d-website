@@ -7,7 +7,7 @@ export function Footer() {
         <div>
           <p className="font-display text-lg text-ink-700">Folio</p>
           <p className="mt-1 max-w-sm">
-            Research-based ebooks with real sources. Not a filler generator.
+            विषय लिखिए — AI शोध, अध्याय, संदर्भ और 3D किताब तैयार करेगा।
           </p>
         </div>
         <div className="flex gap-8">

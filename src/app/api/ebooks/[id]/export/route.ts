@@ -4,6 +4,7 @@ import { getEbook, recordDownload } from "@/lib/ebooks";
 import { exportPdf } from "@/lib/export/pdf";
 import { exportDocx } from "@/lib/export/docx";
 import { exportEpub } from "@/lib/export/epub";
+import { exportMarkdown, exportTxt } from "@/lib/export/text";
 import { requireUser, bad } from "@/lib/api";
 import { safeFilename } from "@/lib/security";
 import { renderCoverPng } from "@/lib/generate/cover";
@@ -19,7 +20,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
   const url = new URL(req.url);
   const format = (url.searchParams.get("format") || "pdf").toLowerCase();
-  if (!["pdf", "docx", "epub"].includes(format)) return bad("Format must be pdf, docx, or epub.");
+  if (!["pdf", "docx", "epub", "md", "txt"].includes(format)) {
+    return bad("Choose PDF, EPUB, DOCX, Markdown, or TXT.");
+  }
 
   const dir = path.join(process.cwd(), "data", "exports");
   fs.mkdirSync(dir, { recursive: true });
@@ -39,7 +42,9 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   try {
     if (format === "pdf") await exportPdf(ebook, dest);
     else if (format === "docx") await exportDocx(ebook, dest);
-    else await exportEpub(ebook, dest);
+    else if (format === "epub") await exportEpub(ebook, dest);
+    else if (format === "md") await exportMarkdown(ebook, dest);
+    else await exportTxt(ebook, dest);
   } catch (err) {
     console.error("export failed", err);
     return bad("Export service temporarily unavailable. Your ebook data has been saved. Please retry.", 503);
@@ -51,6 +56,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     pdf: "application/pdf",
     docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     epub: "application/epub+zip",
+    md: "text/markdown; charset=utf-8",
+    txt: "text/plain; charset=utf-8",
   };
   return new Response(buf, {
     headers: {

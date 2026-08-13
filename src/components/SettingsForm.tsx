@@ -86,8 +86,8 @@ export function SettingsForm({
       <Field label="Number of chapters">
         <input
           type="number"
-          min={4}
-          max={20}
+          min={5}
+          max={25}
           className="field"
           value={value.chapterCount}
           onChange={(e) => set("chapterCount", Number(e.target.value))}

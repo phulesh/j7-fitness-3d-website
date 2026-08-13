@@ -52,6 +52,7 @@ function countHits(text: string, words: string[]) {
 
 const LANGUAGE_ALIASES: Record<string, string> = {
   hindi: "hi",
+  hinglish: "hinglish",
   "hi-in": "hi",
   "hi_in": "hi",
   हिन्दी: "hi",
@@ -82,6 +83,7 @@ export function normalizeOutputLanguage(input: string | undefined | null): strin
   if (LANGUAGE_ALIASES[lower]) return LANGUAGE_ALIASES[lower];
   if (raw.includes("हिन्दी") || raw.includes("हिंदी") || /hindi/i.test(raw)) return "hi";
   const code = lower.split(/[-_]/)[0];
+  if (lower === "hinglish") return "hinglish";
   if (LANGUAGES.some((l) => l.code === code)) return code;
   return code.slice(0, 8) || "en";
 }
@@ -92,7 +94,8 @@ export function resolveOutputLanguage(selected: string, topic: string): string {
 }
 
 export function isHindiOutput(code: string | undefined | null): boolean {
-  return normalizeOutputLanguage(code || "") === "hi";
+  const n = normalizeOutputLanguage(code || "");
+  return n === "hi";
 }
 
 const DEVANAGARI_RE = /[\u0900-\u097F]/g;
@@ -145,6 +148,7 @@ export function wikiLang(code: string): string {
     ko: "ko",
     pt: "pt",
     auto: "en",
+    hinglish: "hi",
   };
   return map[code] || code;
 }

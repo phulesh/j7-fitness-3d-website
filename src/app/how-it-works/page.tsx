@@ -9,7 +9,7 @@ export default function HowPage() {
       <Header />
       <main className="mx-auto max-w-3xl px-4 py-14">
         <p className="stamp text-gold-500">Method</p>
-        <h1 className="font-display mt-4 text-4xl">How research actually happens</h1>
+        <h1 className="font-display mt-4 text-4xl">विषय लिखिए — बाकी Folio करेगा</h1>
         <div className="prose-ebook mt-8">
           <p>
             Folio does not play a fake “researching…” animation while a model writes from memory. The server issues live

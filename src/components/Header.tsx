@@ -37,13 +37,13 @@ export function Header() {
 
         <nav className="hidden items-center gap-7 text-sm text-ink-400 md:flex">
           <Link href="/#how" className="hover:text-ink-700">
-            How it works
+            कैसे काम करता है
           </Link>
-          <Link href="/dashboard" className="hover:text-ink-700">
-            My ebooks
+          <Link href="/ebooks" className="hover:text-ink-700">
+            मेरी किताबें
           </Link>
-          <Link href="/create" className="hover:text-ink-700">
-            New book
+          <Link href="/" className="hover:text-ink-700">
+            नई किताब
           </Link>
         </nav>
 
@@ -75,9 +75,9 @@ export function Header() {
       {open && (
         <div className="border-t border-paper-300 bg-paper-100 px-4 py-4 md:hidden">
           <div className="flex flex-col gap-3 text-sm">
-            <Link href="/#how">How it works</Link>
-            <Link href="/ebooks">My ebooks</Link>
-            <Link href="/ebooks/new">Create New Ebook</Link>
+            <Link href="/#how">कैसे काम करता है</Link>
+            <Link href="/ebooks">मेरी किताबें</Link>
+            <Link href="/">नई किताब</Link>
             {user && !user.isGuest ? (
               <button onClick={logout} className="text-left">
                 Sign out
