@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { fetchJson, fetchText } from "../http";
+import { fetchJson } from "../http";
 import type { ChapterImage } from "../types";
 
 const OPEN_LICENSES = [
@@ -76,34 +76,39 @@ function isOpen(license: string) {
 }
 
 export async function downloadImage(url: string, destDir: string, basename: string): Promise<string | null> {
-  try {
-    fs.mkdirSync(destDir, { recursive: true });
-    const r = await fetchText(url, { timeoutMs: 15000, retries: 1 });
-    if (!r.ok) return null;
-    // fetchText is text; use arrayBuffer via fetch
-  } catch {
-    /* continue */
-  }
-  try {
-    const res = await fetch(url, {
-      headers: { "User-Agent": "FolioEbookGenerator/1.0 (educational)" },
-    });
-    if (!res.ok) return null;
-    const buf = Buffer.from(await res.arrayBuffer());
-    if (buf.length < 1000 || buf.length > 8_000_000) return null;
-    const ext = extFrom(url, res.headers.get("content-type"));
-    const file = path.join(destDir, `${basename}${ext}`);
-    fs.writeFileSync(file, buf);
-    return file;
-  } catch {
-    return null;
-  }
-}
+  fs.mkdirSync(destDir, { recursive: true });
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const ctrl = new AbortController();
+      const timeout = setTimeout(() => ctrl.abort(), 18_000);
+      const res = await fetch(url, {
+        signal: ctrl.signal,
+        headers: { "User-Agent": "FolioEbookGenerator/1.0 (educational)" },
+      });
+      clearTimeout(timeout);
+      const mime = res.headers.get("content-type") || "";
+      if (!res.ok || !mime.toLowerCase().startsWith("image/")) throw new Error("Image response was invalid");
+      const buf = Buffer.from(await res.arrayBuffer());
+      if (buf.length < 1000 || buf.length > 8_000_000) throw new Error("Image size was invalid");
 
-function extFrom(url: string, ct: string | null) {
-  if (ct?.includes("png")) return ".png";
-  if (ct?.includes("webp")) return ".webp";
-  if (ct?.includes("gif")) return ".gif";
-  if (/\.png(\?|$)/i.test(url)) return ".png";
-  return ".jpg";
+      // Normalize every remote asset to a validated, reasonably-sized PNG.
+      // PDFKit, EPUB readers, Android WebViews, and the offline flipbook can
+      // then consume exactly the same file without format-specific failures.
+      const sharp = (await import("sharp")).default;
+      const probe = await sharp(buf).metadata();
+      if (!probe.width || !probe.height || probe.width < 80 || probe.height < 80) throw new Error("Image dimensions were invalid");
+      const file = path.join(destDir, `${basename}.png`);
+      await sharp(buf)
+        .rotate()
+        .resize({ width: 1400, height: 1000, fit: "inside", withoutEnlargement: true })
+        .png({ compressionLevel: 9, quality: 88 })
+        .toFile(file);
+      const final = await sharp(file).metadata();
+      if (final.format !== "png" || !final.width || !final.height) throw new Error("Image validation failed");
+      return file;
+    } catch {
+      if (attempt < 2) await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt));
+    }
+  }
+  return null;
 }

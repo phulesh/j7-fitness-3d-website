@@ -171,6 +171,8 @@ Ebook type: ${settings.type}
 Audience: ${settings.audience}
 Difficulty: ${settings.difficulty}
 Writing style: ${settings.style}
+Selected book length: ${settings.length}
+Target chapter depth: ${{ short: "700–1,000", medium: "1,200–1,800", long: "1,900–2,700", comprehensive: "2,600–3,400" }[settings.length]} useful words when the supplied evidence supports it. Never add filler to hit this range.
 Output language: ${lang}
 Include examples: ${settings.includeExamples}
 Include exercises: ${settings.includeExercises}
@@ -208,7 +210,7 @@ ${notes || "(limited notes — do not invent facts)"}
       { role: "system", content: RESEARCH_WRITER_SYSTEM },
       { role: "user", content: prompt },
     ],
-    { maxTokens: 4000, temperature: 0.3 }
+    { maxTokens: { short: 2600, medium: 3800, long: 5600, comprehensive: 7200 }[settings.length], temperature: 0.3 }
   );
   if (!raw) return null;
   const parsed = extractJson(raw);
@@ -861,14 +863,14 @@ export async function writeFrontMatter(opts: {
   for (const term of terms) {
     const fact = bundle.facts.find((f) => f.category === "definition" && f.text.toLowerCase().includes(term));
     if (fact) {
-      glossary.push({ term: titleCase(term), definition: fact.text, sourceIds: fact.sourceIds });
+      glossary.push({ term: titleCase(term), definition: fact.text, context: "Used in the evidence and analysis presented in this book.", sourceIds: fact.sourceIds });
     }
   }
   // Add definition-like first mentions
   for (const f of bundle.facts.filter((x) => x.category === "definition").slice(0, 16)) {
     const term = f.entities[0] || f.text.split(/\s+/).slice(0, 3).join(" ");
     if (!glossary.some((g) => g.term.toLowerCase() === term.toLowerCase())) {
-      glossary.push({ term, definition: f.text, sourceIds: f.sourceIds });
+      glossary.push({ term, definition: f.text, context: "Used in the evidence and analysis presented in this book.", sourceIds: f.sourceIds });
     }
   }
 

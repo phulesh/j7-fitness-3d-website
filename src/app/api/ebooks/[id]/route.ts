@@ -1,4 +1,4 @@
-import { deleteEbook, getEbook, updateEbook, clientEbook, saveChapters } from "@/lib/ebooks";
+import { deleteEbook, duplicateEbook, getEbook, getLatestJob, updateEbook, clientEbook, saveChapters } from "@/lib/ebooks";
 import { requireUser, json, bad } from "@/lib/api";
 import { outlineSchema, settingsSchema } from "@/lib/validation";
 import { coverSvg, renderCoverPng } from "@/lib/generate/cover";
@@ -7,9 +7,39 @@ import path from "path";
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const auth = await requireUser(req);
   if (auth.error) return auth.error;
+  let ebook = getEbook(params.id, auth.user.id);
+  if (!ebook) return bad("Ebook not found", 404);
+  const active = ["analyzing", "researching", "outlining", "writing", "fact_checking", "exporting"].includes(ebook.status);
+  const latest = active ? getLatestJob(ebook.id) : null;
+  if (latest && ["running", "queued"].includes(latest.status) && Date.now() - Date.parse(latest.updatedAt || latest.createdAt) > 120_000) {
+    const { isRunning } = await import("@/lib/generate/runner");
+    if (!isRunning(ebook.id)) {
+      updateEbook(ebook.id, {
+        status: "failed",
+        error: "The connection to the AI service was interrupted. Completed work is safe.",
+        progress: {
+          step: "failed",
+          percent: ebook.progress?.percent || 0,
+          message: "Generation paused after a service interruption. Resume from the last successful stage.",
+        },
+      });
+      ebook = getEbook(ebook.id, auth.user.id)!;
+    }
+  }
+  return json({ ebook: clientEbook(ebook) });
+}
+
+export async function POST(req: Request, { params }: { params: { id: string } }) {
+  const auth = await requireUser(req);
+  if (auth.error) return auth.error;
   const ebook = getEbook(params.id, auth.user.id);
   if (!ebook) return bad("Ebook not found", 404);
-  return json({ ebook: clientEbook(ebook) });
+  let action = "duplicate";
+  try { action = (await req.json()).action || action; } catch {}
+  if (action !== "duplicate") return bad("Unsupported action", 400);
+  const copy = duplicateEbook(ebook.id, auth.user.id);
+  if (!copy) return bad("Ebook could not be duplicated", 500);
+  return json({ ebook: clientEbook(copy) }, 201);
 }
 
 export async function PATCH(req: Request, { params }: { params: { id: string } }) {
@@ -70,6 +100,13 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (body.syllabus) {
     patch.syllabus = body.syllabus;
   }
+  if (body.sourceMaterial && typeof body.sourceMaterial.text === "string") {
+    patch.sourceMaterial = {
+      filename: String(body.sourceMaterial.filename || "Source material").slice(0, 240),
+      text: body.sourceMaterial.text.replace(/\0/g, "").slice(0, 200_000),
+      uploadedAt: String(body.sourceMaterial.uploadedAt || new Date().toISOString()),
+    };
+  }
   if (body.outline) {
     const parsed = outlineSchema.safeParse(body.outline);
     if (!parsed.success) return bad("Invalid outline");
@@ -105,6 +142,10 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     patch.cover = { style: body.coverStyle || settings.coverStyle, svg, pngPath };
   }
 
+  if (Object.keys(patch).length && ebook.status === "complete") {
+    patch.exports = undefined;
+    patch.qualityReport = undefined;
+  }
   const next = updateEbook(ebook.id, patch as any);
   return json({ ebook: next ? clientEbook(next) : null });
 }

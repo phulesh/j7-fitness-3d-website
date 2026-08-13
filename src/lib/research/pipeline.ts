@@ -49,7 +49,7 @@ import type {
   ResearchQualityReport,
 } from "../types";
 import { nowIso } from "../db";
-import { addResearch, replaceSources } from "../ebooks";
+import { addResearch, replaceSources, getEbook } from "../ebooks";
 import { isHindiOutput } from "../language";
 import { HINDI_OUTLINE_TEMPLATES, localizeOutline } from "../generate/hindi";
 
@@ -496,7 +496,38 @@ export async function runResearch(
 
   // Prefer authority >= 70 when we have enough relevant material.
   const preferred = kept.filter((s) => (s.authorityScore ?? 0) >= PREFERRED_AUTHORITY);
-  const finalSources = preferred.length >= 3 ? [...preferred, ...kept.filter((s) => !preferred.includes(s)).slice(0, 4)] : kept;
+  const finalSources = preferred.length >= 3 ? [...preferred, ...kept.filter((s) => !preferred.includes(s)).slice(0, 4)] : [...kept];
+
+  // A PDF/DOCX supplied by the author is genuine private provenance, not a web
+  // result. Keep it explicitly labelled and never pretend that it has a public
+  // URL. Its extracted text can support drafting, while the final prose still
+  // distinguishes it from independently verified official/scholarly sources.
+  const uploaded = getEbook(ebookId)?.sourceMaterial;
+  if (uploaded?.text?.trim()) {
+    const id = Math.max(0, ...finalSources.map((s) => Number(s.id) || 0)) + 1;
+    finalSources.push({
+      id,
+      title: uploaded.filename || "Uploaded source material",
+      organization: "Author-provided source material",
+      url: `folio-upload://${ebookId}/${encodeURIComponent(uploaded.filename || "source")}`,
+      domain: "private-upload",
+      snippet: uploaded.text.replace(/\s+/g, " ").slice(0, 420),
+      extractedText: uploaded.text.slice(0, 200_000),
+      retrievedAt: uploaded.uploadedAt,
+      tier: 4,
+      score: 80,
+      used: true,
+      relevanceScore: 100,
+      authorityScore: 70,
+      primarySource: true,
+      academicSource: false,
+      reasonForInclusion: "Source material supplied directly by the author.",
+      sourceType: "primary",
+      verificationStatus: "needs_review",
+      reliabilityNote: "Author-provided document; claims require independent corroboration where possible.",
+      citation: `${uploaded.filename}. Author-provided source material.`,
+    });
+  }
   finalSources.sort((a, b) => (b.authorityScore ?? 0) - (a.authorityScore ?? 0) || (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
 
   onProgress?.("Extracting facts and cross-checking important claims");

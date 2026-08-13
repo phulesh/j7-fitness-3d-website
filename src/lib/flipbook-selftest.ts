@@ -168,17 +168,17 @@ export async function runFlipbookSelftest() {
 
   const zip = await JSZip.loadAsync(buf);
   const names = Object.keys(zip.files);
-  const index = await zip.file("book-3d/index.html")!.async("string");
+  const index = await zip.file("index.html")!.async("string");
 
   const m = index.match(/const P=(\[[\s\S]*\]);let n=0/);
   const pages = m ? JSON.parse(m[1]) : [];
   const pageHtml = pages.map((p: { html?: string }) => p.html || "").join("\n");
 
-  check("index.html present", names.includes("book-3d/index.html"));
-  check("Devanagari font bundled", names.includes("book-3d/fonts/NotoSansDevanagari-Regular.ttf"));
-  check("cover png bundled", names.includes("book-3d/images/cover.png"));
+  check("index.html present", names.includes("index.html"));
+  check("Devanagari font bundled", names.includes("fonts/NotoSansDevanagari-Regular.ttf"));
+  check("cover png bundled", names.includes("images/cover.png"));
 
-  const imgEntries = names.filter((n) => n.startsWith("book-3d/images/fig-"));
+  const imgEntries = names.filter((n) => n.startsWith("images/fig-"));
   const refs = pageHtml.match(/src="images\/fig-[^"]+"/g) || [];
   check("chapter images bundled", imgEntries.length > 0, imgEntries.join(", "));
   check("figures page has real <img>", /<img[^>]+src="images\/fig-/.test(pageHtml));

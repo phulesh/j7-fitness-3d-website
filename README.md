@@ -6,7 +6,11 @@ This is not a mock. The source list is the set of URLs the server actually retri
 
 ## Pipeline
 
-User topic → topic analysis → focused search queries → web research → snippet/content inspection → relevance filter (≥70) → authority scoring → fact extraction → cross-check → topic-locked outline → chapter writing → citations → fact/quality review → PDF / DOCX / EPUB.
+Simple Mode asks only for a topic/title, language, author, chapter count, length, optional subtitle, and optional source material. One click runs the complete resumable pipeline:
+
+Understanding topic → research → source verification → topic-locked outline → chapter writing → fact check → validated figures → page design → interactive 3D book → PDF → EPUB → offline HTML/ZIP → final QA → Ready.
+
+The final QA builds and inspects the real downloadable files before marking a volume Ready. It validates Unicode, citations, chapter content, image MIME/dimensions, captions, page navigation, embedded fonts, local offline paths, touch controls, and broken assets. Missing visual assets are repaired with useful generated diagrams rather than empty placeholders.
 
 Unrelated hits (generic biography dumps, entertainment homonyms, off-topic arXiv physics papers, etc.) are rejected before they can become chapters or citations. Writing is blocked if research remains contaminated.
 
@@ -59,5 +63,7 @@ Without paid keys, Folio still researches via Wikipedia, scholarly APIs, library
 - `npm run dev` — development server on `0.0.0.0:3000`
 - `npm run build` && `npm start` — production
 - `npm run test:upgrade` — ebookId uniqueness and Hindi output checks
+- `npm run test:3d` — offline ZIP, local figures, font embedding, and page-turn reader checks
+- `npm run test:complete` — full 14-chapter Hindi acceptance flow through PDF/EPUB/DOCX/3D HTML/ZIP and final QA
 
 Workflow routes: `/ebooks`, `/ebooks/new`, `/ebooks/:ebookId/edit`, `/ebooks/:ebookId/research`, `/ebooks/:ebookId/outline`, `/ebooks/:ebookId/read`, `/ebooks/:ebookId/3d`. Create happens only on **Create New Ebook**; every later step updates that `ebookId`.

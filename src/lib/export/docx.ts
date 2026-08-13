@@ -21,6 +21,7 @@ import {
 } from "docx";
 import type { EbookDocument } from "../types";
 import { labelsFor } from "../generate/write";
+import { groupReferences, sourceCitation } from "../references";
 
 export async function exportDocx(doc: EbookDocument, destPath: string): Promise<string> {
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
@@ -37,6 +38,10 @@ export async function exportDocx(doc: EbookDocument, destPath: string): Promise<
     children.push(new Paragraph({ text: "Disclaimer", heading: HeadingLevel.HEADING_2 }));
     children.push(p(doc.disclaimer));
   }
+  children.push(new Paragraph({ children: [new PageBreak()] }));
+
+  children.push(new Paragraph({ text: (doc.outputLanguage || doc.language) === "hi" ? "प्राक्कथन" : "Preface", heading: HeadingLevel.HEADING_1 }));
+  children.push(p((doc.outputLanguage || doc.language) === "hi" ? "यह पुस्तक विश्वसनीय स्रोतों, स्पष्ट उद्धरणों और तथ्य तथा व्याख्या के भेद के साथ तैयार की गई है।" : "This book was prepared with reliable sources, traceable citations, and a clear distinction between evidence and interpretation."));
   children.push(new Paragraph({ children: [new PageBreak()] }));
 
   if (doc.settings.includeToc) {
@@ -90,7 +95,7 @@ export async function exportDocx(doc: EbookDocument, destPath: string): Promise<
     }
     for (const sec of ch.sections) {
       children.push(new Paragraph({ text: sec.heading, heading: HeadingLevel.HEADING_2 }));
-      children.push(...htmlToParagraphs(sec.html));
+      children.push(...htmlToParagraphs(sec.html.replace(/<figure\b[^>]*>[\s\S]*?<\/figure>/gi, "")));
     }
     if (ch.keyPoints.length) {
       children.push(new Paragraph({ text: labels.keyPoints, heading: HeadingLevel.HEADING_2 }));
@@ -137,7 +142,7 @@ export async function exportDocx(doc: EbookDocument, destPath: string): Promise<
         new Paragraph({
           children: [
             new TextRun({ text: g.term, bold: true }),
-            new TextRun({ text: ` — ${g.definition}` }),
+            new TextRun({ text: ` — ${g.definition}${g.context ? ` (${g.context})` : ""}` }),
           ],
         })
       );
@@ -155,18 +160,13 @@ export async function exportDocx(doc: EbookDocument, destPath: string): Promise<
   if (doc.settings.includeReferences) {
     children.push(new Paragraph({ children: [new PageBreak()] }));
     children.push(new Paragraph({ text: labels.references, heading: HeadingLevel.HEADING_1 }));
-    for (const s of doc.sources) {
-      children.push(
-        new Paragraph({
-          children: [
-            new TextRun({ text: `[${s.id}] ${s.title} — ${s.organization} — ` }),
-            new ExternalHyperlink({
-              children: [new TextRun({ text: s.url, style: "Hyperlink" })],
-              link: s.url,
-            }),
-          ],
-        })
-      );
+    for (const group of groupReferences(doc.sources)) {
+      children.push(new Paragraph({ text: (doc.outputLanguage || doc.language) === "hi" ? `${group.titleHi} · ${group.title}` : group.title, heading: HeadingLevel.HEADING_2 }));
+      for (const s of group.sources) {
+        const runs: (TextRun | ExternalHyperlink)[] = [new TextRun({ text: `[${s.id}] ${sourceCitation(s)}` })];
+        if (/^https?:\/\//.test(s.url)) runs.push(new ExternalHyperlink({ children: [new TextRun({ text: ` — ${s.url}`, style: "Hyperlink" })], link: s.url }));
+        children.push(new Paragraph({ children: runs }));
+      }
     }
   }
 

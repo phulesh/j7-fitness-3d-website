@@ -7,7 +7,7 @@ import { Footer } from "@/components/Footer";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { api, ensureSession } from "@/lib/client";
 import { displayStatus } from "@/lib/types";
-import { BookOpen, Box, Download, Shield, Trash2 } from "lucide-react";
+import { BookOpen, Box, Copy, Download, Shield, Trash2 } from "lucide-react";
 
 type Card = {
   id: string;
@@ -20,6 +20,7 @@ type Card = {
   createdAt: string;
   updatedAt: string;
   type: string;
+  author: string;
   coverSvg?: string;
 };
 
@@ -57,6 +58,15 @@ export default function LibraryPage() {
     setEbooks((xs) => xs.filter((x) => (x.ebookId || x.id) !== id));
   }
 
+  async function duplicate(id: string) {
+    try {
+      const data = await api(`/api/ebooks/${id}`, { method: "POST", body: JSON.stringify({ action: "duplicate" }) });
+      if (data.ebook) await load();
+    } catch (e: any) {
+      setError(e.message || "Could not duplicate ebook");
+    }
+  }
+
   async function download(id: string, format: string) {
     const res = await fetch(`/api/ebooks/${id}/export?format=${format}`);
     if (!res.ok) {
@@ -68,7 +78,8 @@ export default function LibraryPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `ebook.${format}`;
+    const ext = format === "3d" ? "zip" : format;
+    a.download = `ebook${format === "3d" ? "-3D-BOOK" : ""}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -132,6 +143,7 @@ export default function LibraryPage() {
                 />
                 <p className="text-[10px] uppercase tracking-[0.18em] text-gold-500">{e.type}</p>
                 <h2 className="font-display mt-2 text-xl leading-tight">{e.title}</h2>
+                <p className="mt-1 text-sm text-ink-400">by {e.author || "Folio Research"}</p>
                 <p className="mt-2 text-xs text-ink-400">
                   {e.language} · {displayStatus(e.status as any)} · updated {new Date(e.updatedAt || e.createdAt).toLocaleDateString()}
                 </p>
@@ -143,19 +155,25 @@ export default function LibraryPage() {
                     <BookOpen className="h-3.5 w-3.5" /> Open
                   </Link>
                   <Link href={`/ebooks/${id}/edit`} className="btn-ghost !py-1.5 !text-xs">
-                    Edit
+                    Continue Editing
                   </Link>
                   <Link href={`/ebooks/${id}/3d`} className="btn-ghost !py-1.5 !text-xs">
-                    <Box className="h-3.5 w-3.5" /> 3D Book
+                    <Box className="h-3.5 w-3.5" /> 3D Read
                   </Link>
-                  <button onClick={() => download(id, "pdf")} className="btn-ghost !py-1.5 !text-xs">
-                    <Download className="h-3.5 w-3.5" /> PDF
-                  </button>
-                  <button onClick={() => download(id, "docx")} className="btn-ghost !py-1.5 !text-xs">
-                    DOCX
-                  </button>
-                  <button onClick={() => download(id, "epub")} className="btn-ghost !py-1.5 !text-xs">
-                    EPUB
+                  {e.status === "complete" ? (
+                    <details className="relative">
+                      <summary className="btn-ghost !py-1.5 !text-xs cursor-pointer list-none"><Download className="h-3.5 w-3.5" /> Download</summary>
+                      <div className="absolute left-0 z-20 mt-1 grid min-w-40 gap-1 rounded-xl border border-paper-300 bg-paper-50 p-2 shadow-soft">
+                        {["pdf", "epub", "docx", "html", "3d"].map((format) => (
+                          <button key={format} onClick={() => download(id, format)} className="rounded-lg px-3 py-2 text-left text-xs hover:bg-paper-200">
+                            {format === "3d" ? "3D Book ZIP" : format === "html" ? "3D HTML" : format.toUpperCase()}
+                          </button>
+                        ))}
+                      </div>
+                    </details>
+                  ) : <span className="rounded-full bg-gold-500/10 px-3 py-2 text-xs text-gold-500">Generation in progress</span>}
+                  <button onClick={() => duplicate(id)} className="btn-ghost !py-1.5 !text-xs">
+                    <Copy className="h-3.5 w-3.5" /> Duplicate
                   </button>
                   <Link href={`/ebooks/${id}/edit?fact=1`} className="btn-ghost !py-1.5 !text-xs">
                     <Shield className="h-3.5 w-3.5" /> Fact Check

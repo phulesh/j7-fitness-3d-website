@@ -422,6 +422,7 @@ export interface EbookSettings {
 export interface GlossaryEntry {
   term: string;
   definition: string;
+  context?: string;
   sourceIds: number[];
 }
 
@@ -430,6 +431,25 @@ export interface FaqItem {
   answer: string;
   sourceIds: number[];
 }
+
+export const COMPLETE_PIPELINE_STAGES = [
+  { key: "understanding", label: "Understanding Topic", labelHi: "विषय को समझना", percent: 4 },
+  { key: "researching", label: "Researching", labelHi: "शोध करना", percent: 14 },
+  { key: "verifying_sources", label: "Verifying Sources", labelHi: "स्रोतों का सत्यापन", percent: 28 },
+  { key: "outlining", label: "Building Outline", labelHi: "रूपरेखा बनाना", percent: 40 },
+  { key: "writing", label: "Writing Chapters", labelHi: "अध्याय लिखना", percent: 72 },
+  { key: "fact_checking", label: "Fact Checking", labelHi: "तथ्यों की जाँच", percent: 80 },
+  { key: "generating_figures", label: "Generating Figures", labelHi: "चित्र बनाना", percent: 84 },
+  { key: "designing_pages", label: "Designing Pages", labelHi: "पृष्ठ डिज़ाइन करना", percent: 87 },
+  { key: "creating_3d", label: "Creating 3D Book", labelHi: "3D पुस्तक बनाना", percent: 90 },
+  { key: "building_pdf", label: "Building PDF", labelHi: "PDF बनाना", percent: 92 },
+  { key: "building_epub", label: "Building EPUB", labelHi: "EPUB बनाना", percent: 94 },
+  { key: "building_html", label: "Building Offline HTML 3D Book", labelHi: "ऑफलाइन 3D पुस्तक बनाना", percent: 96 },
+  { key: "quality_check", label: "Final Quality Check", labelHi: "अंतिम गुणवत्ता जाँच", percent: 98 },
+  { key: "complete", label: "Ready", labelHi: "तैयार", percent: 100 },
+] as const;
+
+export type CompletePipelineStage = (typeof COMPLETE_PIPELINE_STAGES)[number]["key"];
 
 export type EbookStage =
   | "draft"
@@ -440,7 +460,39 @@ export type EbookStage =
   | "writing"
   | "factcheck"
   | "cover"
+  | "exports"
+  | "quality"
   | "complete";
+
+export interface QualityCheckItem {
+  key: string;
+  label: string;
+  passed: boolean;
+  repaired?: boolean;
+  detail?: string;
+}
+
+export interface QualityReport {
+  passed: boolean;
+  attempts: number;
+  checkedAt: string;
+  items: QualityCheckItem[];
+}
+
+export interface EbookExports {
+  pdf?: string;
+  epub?: string;
+  docx?: string;
+  html?: string;
+  flipbook?: string;
+  generatedAt?: string;
+}
+
+export interface UploadedSourceMaterial {
+  filename: string;
+  text: string;
+  uploadedAt: string;
+}
 
 export interface EbookDocument {
   id: string;
@@ -469,6 +521,7 @@ export interface EbookDocument {
   settings: EbookSettings;
   analysis?: TopicAnalysis;
   syllabus?: SyllabusInfo;
+  sourceMaterial?: UploadedSourceMaterial;
   researchQuestions?: string[];
   outline: OutlineItem[];
   introduction: string;
@@ -498,6 +551,8 @@ export interface EbookDocument {
     regeneratedSections: string[];
     detail?: string;
   };
+  qualityReport?: QualityReport;
+  exports?: EbookExports;
   progress: {
     step: string;
     percent: number;
