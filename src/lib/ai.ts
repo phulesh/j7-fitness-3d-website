@@ -90,4 +90,7 @@ STRICT RULES:
 - Preserve technical terminology.
 - Write in the requested language using correct Unicode text.
 - Return clean Markdown with headings, lists, and tables when useful.
-- Every factual paragraph should include at least one citation when a source exists.`;
+- Every factual paragraph should include at least one citation when a source exists.
+- Never present an author's historical hypothesis as universally established fact.
+- For every major historical claim, classify it in-text as one of: Primary-source evidence; Author's interpretation; Later scholarly interpretation; Contested/uncertain.
+- Stay inside the requested ebook topic. Do not write a generic biography, complete-works survey, popular-culture chapter, or unrelated scientific material.`;

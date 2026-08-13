@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
@@ -114,7 +114,7 @@ function CreateInner() {
   }
 
   async function saveOutlineAndWrite() {
-    if (!ebookId) return;
+    if (!ebookId || writingBlocked) return;
     setBusy(true);
     setError("");
     try {
@@ -129,6 +129,9 @@ function CreateInner() {
   }
 
   const sources = status?.sources || [];
+  const rejectedSources = status?.rejectedSources || [];
+  const researchQuality = status?.researchQuality;
+  const writingBlocked = Boolean(researchQuality?.generationBlocked);
 
   return (
     <>
@@ -230,8 +233,73 @@ function CreateInner() {
         {phase === "outline" && (
           <section className="mt-8 space-y-5">
             <div className="paper-card rounded-2xl p-5">
-              <h2 className="font-display text-xl">Outline preview</h2>
-              <p className="text-sm text-ink-400">Edit titles before writing. Structure comes from sources and syllabus, not guesswork.</p>
+              <h2 className="font-display text-xl">Research Quality</h2>
+              <p className="mt-2 text-lg">
+                {researchQuality?.relevantCount ?? sources.length} relevant sources / {researchQuality?.rejectedCount ?? rejectedSources.length} rejected sources
+              </p>
+              <p className="mt-1 text-sm text-ink-400">
+                Only sources that pass semantic relevance against the topic, research questions, and chapter plan are kept. Titles alone are never enough.
+              </p>
+              {writingBlocked && (
+                <div className="mt-4 rounded-xl border border-unsupported/30 bg-unsupported/5 px-4 py-3 text-sm text-unsupported">
+                  {researchQuality?.contaminationReason ||
+                    "Research still contains unrelated material or too few on-topic sources. Writing is blocked until research is clean."}
+                </div>
+              )}
+            </div>
+
+            <div className="paper-card rounded-2xl p-5">
+              <h3 className="font-display text-lg">Approved sources</h3>
+              <p className="text-sm text-ink-400">
+                {sources.length} on-topic records actually used for this title. Unrelated search hits are not listed here.
+              </p>
+              <ol className="mt-3 max-h-72 space-y-2 overflow-auto text-sm">
+                {sources.map((s: any) => (
+                  <li key={s.id} className="border-b border-paper-300 pb-2">
+                    <span className="text-gold-500">[{s.id}]</span>{" "}
+                    <a href={s.url} target="_blank" rel="noreferrer" className="underline">
+                      {s.title}
+                    </a>
+                    <span className="text-ink-400">
+                      {" "}
+                      — {s.organization}
+                      {typeof s.relevanceScore === "number" ? ` · relevance ${s.relevanceScore}` : ""}
+                      {typeof s.authorityScore === "number" ? ` · authority ${s.authorityScore}` : ` · tier ${s.tier}`}
+                      {s.primarySource ? " · primary" : ""}
+                      {s.academicSource ? " · academic" : ""}
+                    </span>
+                    {s.reasonForInclusion && <p className="mt-1 text-xs text-ink-400">{s.reasonForInclusion}</p>}
+                  </li>
+                ))}
+              </ol>
+            </div>
+
+            <div className="paper-card rounded-2xl p-5">
+              <h3 className="font-display text-lg">Rejected sources</h3>
+              <p className="text-sm text-ink-400">Automatically excluded after inspecting the snippet or page content.</p>
+              {rejectedSources.length === 0 ? (
+                <p className="mt-3 text-sm text-ink-400">No off-topic hits needed to be discarded.</p>
+              ) : (
+                <ol className="mt-3 max-h-72 space-y-2 overflow-auto text-sm">
+                  {rejectedSources.map((s: any, i: number) => (
+                    <li key={`${s.url}-${i}`} className="border-b border-paper-300 pb-2">
+                      {s.url ? (
+                        <a href={s.url} target="_blank" rel="noreferrer" className="underline">
+                          {s.title}
+                        </a>
+                      ) : (
+                        <span>{s.title}</span>
+                      )}
+                      <p className="text-unsupported">{s.rejectionReason}</p>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </div>
+
+            <div className="paper-card rounded-2xl p-5">
+              <h2 className="font-display text-xl">Final chapter outline</h2>
+              <p className="text-sm text-ink-400">Edit titles before writing. Structure follows the requested historical question, not a generic biography dump.</p>
               <ul className="mt-4 space-y-3">
                 {outline.map((item, i) => (
                   <li key={item.id} className="rounded-xl border border-paper-300 bg-paper-50 p-3">
@@ -258,25 +326,14 @@ function CreateInner() {
                   </li>
                 ))}
               </ul>
-              <button disabled={busy} onClick={saveOutlineAndWrite} className="btn-gold mt-5 min-h-[48px]">
-                {busy ? "Starting chapters…" : "Write ebook from this outline"}
+              <button
+                disabled={busy || writingBlocked}
+                onClick={saveOutlineAndWrite}
+                className="btn-gold mt-5 min-h-[48px]"
+                title={writingBlocked ? "Writing is blocked until research is on-topic." : undefined}
+              >
+                {busy ? "Starting chapters…" : writingBlocked ? "Writing blocked until research is clean" : "Write ebook from this outline"}
               </button>
-            </div>
-
-            <div className="paper-card rounded-2xl p-5">
-              <h3 className="font-display text-lg">Sources collected</h3>
-              <p className="text-sm text-ink-400">{sources.length} pages ranked. These are the records research actually returned.</p>
-              <ol className="mt-3 max-h-72 space-y-2 overflow-auto text-sm">
-                {sources.map((s: any) => (
-                  <li key={s.id} className="border-b border-paper-300 pb-2">
-                    <span className="text-gold-500">[{s.id}]</span>{" "}
-                    <a href={s.url} target="_blank" rel="noreferrer" className="underline">
-                      {s.title}
-                    </a>
-                    <span className="text-ink-400"> — {s.organization} · tier {s.tier}</span>
-                  </li>
-                ))}
-              </ol>
             </div>
           </section>
         )}

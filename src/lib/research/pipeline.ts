@@ -22,6 +22,21 @@ import { searchGitHub } from "./github";
 import { extractReadable, extractFactsFromText, crossCheckFacts, extractKeyTerms } from "./extract";
 import { organizationFromDomain, sourceTier, scoreSource } from "./rank";
 import { searchCommonsImages } from "./commons";
+import {
+  annotateSource,
+  buildResearchQuality,
+  buildTopicProfile,
+  classifyClaim,
+  evaluateCandidate,
+  filterQueries,
+  isBlockedOutlineTitle,
+  MIN_RELEVANCE,
+  PREFERRED_AUTHORITY,
+  queryIsOnTopic,
+  sectionIsRelevant,
+  toRejected,
+  type TopicProfile,
+} from "./relevance";
 import type {
   SourceRecord,
   ExtractedFact,
@@ -30,6 +45,8 @@ import type {
   SyllabusInfo,
   OutlineItem,
   ChapterImage,
+  RejectedSource,
+  ResearchQualityReport,
 } from "../types";
 import { nowIso, nextSourceId } from "../db";
 import { addResearch, replaceSources } from "../ebooks";
@@ -48,12 +65,15 @@ async function probeLiveWeb(): Promise<boolean> {
 
 export interface ResearchBundle {
   sources: SourceRecord[];
+  rejectedSources: RejectedSource[];
+  researchQuality: ResearchQualityReport;
   facts: ExtractedFact[];
   wikiPages: WikiPage[];
   images: ChapterImage[];
   syllabusFromWeb?: SyllabusInfo;
   insufficient: boolean;
   message?: string;
+  profile: TopicProfile;
 }
 
 export async function runResearch(
@@ -64,30 +84,77 @@ export async function runResearch(
 ): Promise<ResearchBundle> {
   const lang = analysis.wikiLanguage || "en";
   const topic = analysis.topic;
+  const profile = buildTopicProfile(topic, {
+    category: analysis.category,
+    type: settings.type,
+    language: analysis.outputLanguage,
+  });
   const hits: RawHit[] = [];
+  const rejected: RejectedSource[] = [];
   const liveWeb = await probeLiveWeb();
+
+  const considerHit = (h: RawHit): boolean => {
+    const ev = evaluateCandidate(h, profile, {
+      researchQuestions: profile.researchQuestions,
+      outlineTitles: profile.chapterPlan?.map((c) => c.title),
+    });
+    if (!ev.accepted) {
+      rejected.push(toRejected(h, ev));
+      return false;
+    }
+    return true;
+  };
 
   onProgress?.("Searching encyclopedias and knowledge bases");
 
-  const corpusHits = searchCorpus(topic, 10);
+  const corpusHits = searchCorpus(focusedCorpusQuery(profile, topic), 10).filter((h) => considerHit(h));
   for (const h of corpusHits) {
     hits.push({ title: h.title, url: h.url, snippet: h.snippet, provider: "corpus" });
   }
 
-  try {
-    const gh = await searchGitHub(topic, 5);
-    for (const h of gh) hits.push(h);
-  } catch {
-    /* optional */
+  if (profile.allowGithub) {
+    try {
+      const gh = await searchGitHub(profile.workTitle || topic, 5);
+      for (const h of gh) {
+        if (considerHit(h)) hits.push(h);
+      }
+    } catch {
+      /* optional */
+    }
   }
 
-  const wikiResults: [WikiSearchHit[], WikiSearchHit[]] = liveWeb
-    ? await Promise.all([
-        wikiSearch(topic, lang, 8).catch(() => []),
-        lang === "en" ? Promise.resolve([]) : wikiSearch(topic, "en", 6).catch(() => []),
-      ])
-    : [[], []];
-  const [wikiHits, wikiHitsEn] = wikiResults;
+  const wikiSearchTerms = wikiQueryList(profile, topic);
+  const wikiHits: WikiSearchHit[] = [];
+  const wikiHitsEn: WikiSearchHit[] = [];
+
+  if (liveWeb) {
+    for (const q of wikiSearchTerms.slice(0, 4)) {
+      try {
+        const found = await wikiSearch(q, lang, 6);
+        for (const h of found) {
+          const url = `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(h.title.replace(/ /g, "_"))}`;
+          if (considerHit({ title: h.title, url, snippet: h.snippet, provider: "wikipedia-search" })) {
+            if (!wikiHits.some((x) => x.title === h.title)) wikiHits.push(h);
+          }
+        }
+      } catch {
+        /* continue */
+      }
+      if (lang !== "en") {
+        try {
+          const found = await wikiSearch(q, "en", 5);
+          for (const h of found) {
+            const url = `https://en.wikipedia.org/wiki/${encodeURIComponent(h.title.replace(/ /g, "_"))}`;
+            if (considerHit({ title: h.title, url, snippet: h.snippet, provider: "wikipedia-search" })) {
+              if (!wikiHitsEn.some((x) => x.title === h.title)) wikiHitsEn.push(h);
+            }
+          }
+        } catch {
+          /* continue */
+        }
+      }
+    }
+  }
 
   for (const h of [...wikiHits, ...wikiHitsEn]) {
     const wlang = wikiHits.includes(h) ? lang : "en";
@@ -102,11 +169,14 @@ export async function runResearch(
   onProgress?.("Searching the open web for authoritative pages");
 
   if (liveWeb) {
-    const queryBatch = analysis.searchQueries.slice(0, 5);
+    const queryBatch = filterQueries(analysis.searchQueries || [], profile);
     for (const q of queryBatch) {
+      if (!queryIsOnTopic(q, profile)) continue;
       try {
         const found = await webSearch(q, { count: 6 });
-        hits.push(...found);
+        for (const h of found) {
+          if (considerHit(h)) hits.push(h);
+        }
       } catch {
         onProgress?.("Source unavailable — finding another reliable source.");
       }
@@ -114,21 +184,38 @@ export async function runResearch(
 
     onProgress?.("Collecting academic and library records");
 
-    const extras: Promise<RawHit[]>[] = [searchOpenLibrary(topic).catch(() => [])];
-    if (["scientific", "technical", "programming", "medical", "academic"].includes(analysis.category)) {
-      extras.push(searchCrossref(topic).catch(() => []));
-      extras.push(searchArxiv(topic).catch(() => []));
-    }
-    if (analysis.category === "medical") extras.push(searchPubMed(topic).catch(() => []));
+    const libraryQuery = profile.workTitle && profile.author ? `${profile.workTitle} ${profile.author}` : topic;
+    const extras: Promise<RawHit[]>[] = [searchOpenLibrary(libraryQuery).catch(() => [])];
+    if (profile.allowCrossref) extras.push(searchCrossref(libraryQuery).catch(() => []));
+    if (profile.allowArxiv && profile.allowScientificPapers) extras.push(searchArxiv(libraryQuery).catch(() => []));
+    if (profile.allowPubmed) extras.push(searchPubMed(libraryQuery).catch(() => []));
     const extraHits = (await Promise.all(extras)).flat();
-    hits.push(...extraHits);
+    for (const h of extraHits) {
+      if (considerHit(h)) hits.push(h);
+    }
   } else {
-    onProgress?.("Open-web encyclopedias unreachable from this host — using retrieved corpus and GitHub");
+    onProgress?.("Open-web encyclopedias unreachable from this host — using retrieved corpus");
   }
 
   persistResearch(ebookId, topic, hits);
 
-  const ranked = hitsToRanked(hits, topic).slice(0, 28);
+  const ranked = hitsToRanked(hits, topic)
+    .map((h) => {
+      const ev = evaluateCandidate(h, profile, {
+        researchQuestions: profile.researchQuestions,
+        outlineTitles: profile.chapterPlan?.map((c) => c.title),
+      });
+      return { ...h, ev };
+    })
+    .filter((h) => {
+      if (!h.ev.accepted) {
+        if (!rejected.some((r) => r.url === h.url)) rejected.push(toRejected(h, h.ev));
+        return false;
+      }
+      return true;
+    })
+    .sort((a, b) => b.ev.authorityScore - a.ev.authorityScore || b.ev.relevanceScore - a.ev.relevanceScore)
+    .slice(0, 28);
 
   onProgress?.("Evaluating source quality and fetching full text");
 
@@ -140,30 +227,96 @@ export async function runResearch(
   ];
 
   if (liveWeb && !titleCandidates.length) {
-    const mapped = await findEnglishTitleThenLang(topic, lang).catch(() => null);
-    if (mapped?.enTitle) titleCandidates.push({ title: mapped.enTitle, lang: "en" });
-    if (mapped?.localTitle) titleCandidates.push({ title: mapped.localTitle, lang: lang });
+    const mappedQuery = profile.workTitle && profile.author ? `${profile.workTitle} ${profile.author}` : topic;
+    const mapped = await findEnglishTitleThenLang(mappedQuery, lang).catch(() => null);
+    if (mapped?.enTitle) {
+      const probe = {
+        title: mapped.enTitle,
+        url: `https://en.wikipedia.org/wiki/${encodeURIComponent(mapped.enTitle)}`,
+        snippet: mapped.enTitle,
+        provider: "wikipedia-search",
+      };
+      if (considerHit({ ...probe, snippet: `${mapped.enTitle} ${profile.coreTerms.slice(0, 4).join(" ")}` })) {
+        titleCandidates.push({ title: mapped.enTitle, lang: "en" });
+      } else {
+        // still try if the title itself is clearly on-topic
+        const ev = evaluateCandidate({ ...probe, snippet: mapped.enTitle, extractedText: mapped.enTitle }, profile);
+        if (!ev.accepted) rejected.push(toRejected(probe, ev));
+      }
+    }
+    if (mapped?.localTitle) titleCandidates.push({ title: mapped.localTitle, lang });
   }
 
   if (liveWeb) {
-    for (const c of titleCandidates.slice(0, 5)) {
+    for (const c of titleCandidates.slice(0, 6)) {
       const key = `${c.lang}:${c.title}`;
       if (titlesTried.has(key)) continue;
       titlesTried.add(key);
       const page = await fetchWikiPage(c.title, c.lang);
-      if (page && !page.isDisambiguation) wikiPages.push(page);
+      if (!page || page.isDisambiguation) continue;
+      const ev = evaluateCandidate(
+        {
+          title: page.title,
+          url: page.url,
+          snippet: page.extract.slice(0, 400),
+          extractedText: page.extract.slice(0, 6000),
+          provider: "wikipedia",
+        },
+        profile,
+        { researchQuestions: profile.researchQuestions }
+      );
+      if (!ev.accepted) {
+        rejected.push(
+          toRejected(
+            { title: page.title, url: page.url, snippet: page.extract.slice(0, 240), provider: "wikipedia" },
+            ev
+          )
+        );
+        continue;
+      }
+      page.sections = page.sections.filter((sec) => sectionIsRelevant(sec, profile));
+      wikiPages.push(page);
     }
   }
 
-  const wbTitles = liveWeb ? await searchWikibooks(topic, "en").catch(() => []) : [];
+  const wbTitles = liveWeb && profile.kind !== "named-work-inquiry" ? await searchWikibooks(topic, "en").catch(() => []) : [];
   const wbChapters = [];
   for (const t of wbTitles.slice(0, 2)) {
     const ch = await fetchWikibooksChapter(t, "en");
-    if (ch) wbChapters.push(ch);
+    if (!ch) continue;
+    if (
+      !evaluateCandidate(
+        { title: ch.title, url: ch.url, snippet: ch.text.slice(0, 300), extractedText: ch.text.slice(0, 4000) },
+        profile
+      ).accepted
+    ) {
+      continue;
+    }
+    wbChapters.push(ch);
   }
 
   const sources: SourceRecord[] = [];
   let sid = 1;
+
+  const pushIfRelevant = (draft: SourceRecord): boolean => {
+    const ev = evaluateCandidate(
+      {
+        title: draft.title,
+        url: draft.url,
+        snippet: draft.snippet,
+        extractedText: draft.extractedText,
+        provider: draft.organization,
+      },
+      profile,
+      { researchQuestions: profile.researchQuestions, outlineTitles: profile.chapterPlan?.map((c) => c.title) }
+    );
+    if (!ev.accepted) {
+      rejected.push(toRejected({ title: draft.title, url: draft.url, snippet: draft.snippet }, ev));
+      return false;
+    }
+    sources.push(annotateSource(draft, ev));
+    return true;
+  };
 
   for (const page of wikiPages) {
     const src: SourceRecord = {
@@ -173,7 +326,7 @@ export async function runResearch(
       url: page.url,
       domain: new URL(page.url).hostname,
       snippet: page.extract.slice(0, 280),
-      extractedText: page.extract.slice(0, 20000),
+      extractedText: relevantWikiExtract(page, profile),
       retrievedAt: nowIso(),
       publishedAt: page.lastModified,
       tier: 7,
@@ -188,11 +341,12 @@ export async function runResearch(
       used: true,
       language: page.lang,
     };
-    sources.push(src);
+    pushIfRelevant(src);
+
     for (const ref of page.references) {
       if (!ref.url) continue;
       if (sources.some((s) => s.url === ref.url)) continue;
-      sources.push({
+      const draft: SourceRecord = {
         id: sid++,
         title: ref.text.slice(0, 160),
         organization: organizationFromDomain(ref.url),
@@ -204,11 +358,12 @@ export async function runResearch(
         tier: sourceTier(ref.url),
         score: scoreSource({ url: ref.url, title: ref.text, snippet: ref.text, topic }),
         used: false,
-      });
+      };
+      pushIfRelevant(draft);
     }
     for (const link of page.externalLinks.slice(0, 8)) {
       if (sources.some((s) => s.url === link.url)) continue;
-      sources.push({
+      pushIfRelevant({
         id: sid++,
         title: link.title,
         organization: organizationFromDomain(link.url),
@@ -226,7 +381,7 @@ export async function runResearch(
 
   for (const h of corpusHits) {
     if (sources.some((s) => s.url === h.url)) continue;
-    sources.push({
+    pushIfRelevant({
       id: sid++,
       title: h.title,
       organization: h.organization || "Wikipedia",
@@ -243,7 +398,7 @@ export async function runResearch(
   }
 
   for (const ch of wbChapters) {
-    sources.push({
+    pushIfRelevant({
       id: sid++,
       title: ch.title,
       organization: "Wikibooks",
@@ -259,11 +414,10 @@ export async function runResearch(
     });
   }
 
-  // Fetch full text of top non-wiki pages (prefer better tiers)
   const toFetch = liveWeb
     ? ranked
         .filter((h) => !/wikipedia\.org|wikimedia\.org|wikidata\.org|github\.com/.test(h.url))
-        .sort((a, b) => a.tier - b.tier || b.score - a.score)
+        .sort((a, b) => b.ev.authorityScore - a.ev.authorityScore || b.ev.relevanceScore - a.ev.relevanceScore)
         .slice(0, 8)
     : [];
 
@@ -276,7 +430,7 @@ export async function runResearch(
     } catch {
       onProgress?.("Source unavailable — finding another reliable source.");
     }
-    sources.push({
+    const draft: SourceRecord = {
       id: sid++,
       title: h.title,
       organization: h.organization,
@@ -294,13 +448,13 @@ export async function runResearch(
         extractedLen: extracted.length,
       }),
       used: extracted.length > 200,
-    });
+    };
+    pushIfRelevant(draft);
   }
 
-  // Remaining ranked hits as lightweight citations
   for (const h of ranked.slice(0, 16)) {
     if (sources.some((s) => s.url === h.url)) continue;
-    sources.push({
+    pushIfRelevant({
       id: sid++,
       title: h.title,
       organization: h.organization,
@@ -315,12 +469,39 @@ export async function runResearch(
     });
   }
 
-  sources.sort((a, b) => a.tier - b.tier || b.score - a.score);
+  // Drop any source that somehow slipped below the threshold after content inspection.
+  const kept: SourceRecord[] = [];
+  for (const s of sources) {
+    if ((s.relevanceScore ?? 0) < MIN_RELEVANCE) {
+      rejected.push({
+        title: s.title,
+        url: s.url,
+        snippet: s.snippet,
+        relevanceScore: s.relevanceScore ?? 0,
+        rejectionReason: s.reasonForInclusion
+          ? `Re-checked below threshold: ${s.reasonForInclusion}`
+          : "Failed final relevance inspection.",
+      });
+      continue;
+    }
+    kept.push(s);
+  }
+
+  kept.sort((a, b) => {
+    const auth = (b.authorityScore ?? 0) - (a.authorityScore ?? 0);
+    if (auth) return auth;
+    return (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0) || a.tier - b.tier;
+  });
+
+  // Prefer authority >= 70 when we have enough relevant material.
+  const preferred = kept.filter((s) => (s.authorityScore ?? 0) >= PREFERRED_AUTHORITY);
+  const finalSources = preferred.length >= 3 ? [...preferred, ...kept.filter((s) => !preferred.includes(s)).slice(0, 4)] : kept;
+  finalSources.sort((a, b) => (b.authorityScore ?? 0) - (a.authorityScore ?? 0) || (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0));
 
   onProgress?.("Extracting facts and cross-checking important claims");
 
   const facts: ExtractedFact[] = [];
-  for (const s of sources.filter((x) => x.extractedText.length > 80).slice(0, 12)) {
+  for (const s of finalSources.filter((x) => x.extractedText.length > 80).slice(0, 12)) {
     const extracted = extractFactsFromText(s.extractedText, s.id);
     for (const f of extracted.slice(0, 25)) {
       facts.push({
@@ -331,6 +512,7 @@ export async function runResearch(
         verifiedBy: 1,
         category: f.category,
         entities: f.entities,
+        claimKind: classifyClaim(f.text, profile),
       });
     }
   }
@@ -346,25 +528,86 @@ export async function runResearch(
   let images: ChapterImage[] = [];
   if (settings.includeImages && liveWeb) {
     onProgress?.("Collecting openly licensed images");
-    images = await searchCommonsImages(topic, 6).catch(() => []);
+    images = await searchCommonsImages(profile.imageQuery, 6).catch(() => []);
+    images = images.filter((img) => {
+      const ev = evaluateCandidate(
+        {
+          title: img.caption || img.alt,
+          url: img.sourceUrl,
+          snippet: `${img.caption} ${img.alt} ${img.credit}`,
+          extractedText: `${img.caption} ${img.alt}`,
+        },
+        profile
+      );
+      if (!ev.accepted && /film|movie|ness|capone|costner/.test(`${img.caption} ${img.alt}`.toLowerCase())) {
+        rejected.push(toRejected({ title: img.caption, url: img.sourceUrl, snippet: img.alt }, ev));
+        return false;
+      }
+      return true;
+    });
   }
 
-  const syllabusFromWeb = await maybeFindSyllabus(topic, sources, analysis);
+  const syllabusFromWeb = await maybeFindSyllabus(topic, finalSources, analysis);
 
-  const meat = sources.filter((s) => s.extractedText.length > 250);
-  const insufficient = meat.length === 0 && wikiPages.length === 0;
+  const researchQuality = buildResearchQuality(finalSources, dedupeRejected(rejected));
+  const meat = finalSources.filter((s) => s.extractedText.length > 250);
+  const insufficient = (meat.length === 0 && wikiPages.length === 0) || researchQuality.generationBlocked;
+
+  persistSources(ebookId, finalSources);
 
   return {
-    sources,
+    sources: finalSources,
+    rejectedSources: researchQuality.rejected,
+    researchQuality,
     facts,
     wikiPages,
     images,
     syllabusFromWeb,
     insufficient,
     message: insufficient
-      ? "Not enough reliable information was found to create a factual ebook."
+      ? researchQuality.contaminationReason ||
+        "Not enough reliable, on-topic information was found to create a factual ebook."
       : undefined,
+    profile,
   };
+}
+
+function focusedCorpusQuery(profile: TopicProfile, topic: string): string {
+  if (profile.workTitle && profile.author) return `${profile.workTitle} ${profile.author}`;
+  return topic;
+}
+
+function wikiQueryList(profile: TopicProfile, topic: string): string[] {
+  const qs = [];
+  if (profile.workTitle && profile.author) qs.push(`${profile.workTitle} ${profile.author}`);
+  if (profile.kind === "named-work-inquiry" && /untouchab/.test(topic.toLowerCase())) {
+    qs.push("Untouchability");
+    qs.push("The Untouchables Ambedkar");
+    qs.push("Dalit Ambedkar");
+  } else {
+    qs.push(profile.workTitle || topic);
+  }
+  return [...new Set(qs)];
+}
+
+function relevantWikiExtract(page: WikiPage, profile: TopicProfile): string {
+  const parts = [page.extract.slice(0, 2500)];
+  for (const sec of page.sections) {
+    if (sectionIsRelevant(sec, profile)) parts.push(`== ${sec.title} ==\n${sec.extract}`);
+  }
+  return parts.join("\n\n").slice(0, 20000);
+}
+
+function dedupeRejected(items: RejectedSource[]): RejectedSource[] {
+  const seen = new Set<string>();
+  const out: RejectedSource[] = [];
+  for (const r of items) {
+    const k = (r.url || r.title).split("#")[0];
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(r);
+  }
+  return out.slice(0, 60);
 }
 
 function persistResearch(ebookId: string, query: string, hits: RawHit[]) {
@@ -412,13 +655,23 @@ export function buildOutlineFromResearch(
   bundle: ResearchBundle,
   syllabus?: SyllabusInfo
 ): OutlineItem[] {
-  const n = Math.max(4, Math.min(20, settings.chapterCount || 10));
+  const profile = bundle.profile || buildTopicProfile(analysis.topic, { category: analysis.category, type: settings.type });
+  const requested = settings.chapterCount || 10;
+  const n = profile.chapterPlan?.length && profile.targetChapterCount
+    ? Math.max(
+        profile.targetChapterCount.min,
+        Math.min(profile.targetChapterCount.max, profile.chapterPlan.length)
+      )
+    : profile.targetChapterCount
+      ? Math.max(profile.targetChapterCount.min, Math.min(profile.targetChapterCount.max, Math.max(requested, profile.targetChapterCount.min)))
+      : Math.max(4, Math.min(20, requested));
 
   if (syllabus?.units?.length) {
     const items: OutlineItem[] = [];
     for (const unit of syllabus.units) {
       if (unit.topics.length) {
         for (const t of unit.topics) {
+          if (isBlockedOutlineTitle(t, profile)) continue;
           items.push({
             id: nanoid(8),
             title: t,
@@ -427,18 +680,29 @@ export function buildOutlineFromResearch(
             children: [],
           });
         }
-      } else {
+      } else if (!isBlockedOutlineTitle(unit.title, profile)) {
         items.push({ id: nanoid(8), title: unit.title, summary: unit.objectives.join("; "), sourceIds: [] });
       }
     }
-    return normalizeOutlineCount(items, n, settings, analysis, bundle);
+    if (items.length >= 3) return normalizeOutlineCount(items, n, settings, analysis, bundle, profile);
   }
 
-  const skip = /see also|references|external links|notes|bibliography|further reading|sources|citations/i;
+  if (profile.chapterPlan?.length) {
+    const items = profile.chapterPlan.slice(0, n).map((ch) => ({
+      id: nanoid(8),
+      title: ch.title,
+      summary: ch.summary,
+      sourceIds: bundle.sources.filter((s) => (s.relevanceScore ?? 0) >= MIN_RELEVANCE).slice(0, 8).map((s) => s.id),
+      children: [],
+    }));
+    return withPedagogy(items, settings, analysis, profile);
+  }
+
   const fromWiki: OutlineItem[] = [];
   for (const page of bundle.wikiPages) {
     for (const sec of page.sections) {
-      if (skip.test(sec.title) || sec.extract.length < 80) continue;
+      if (isBlockedOutlineTitle(sec.title, profile) || sec.extract.length < 80) continue;
+      if (!sectionIsRelevant(sec, profile)) continue;
       fromWiki.push({
         id: nanoid(8),
         title: sec.title,
@@ -449,11 +713,11 @@ export function buildOutlineFromResearch(
     }
   }
 
-  if (fromWiki.length >= 3) {
-    return normalizeOutlineCount(fromWiki, n, settings, analysis, bundle);
+  if (fromWiki.length >= 3 && profile.kind !== "named-work-inquiry") {
+    return normalizeOutlineCount(fromWiki, n, settings, analysis, bundle, profile);
   }
 
-  return defaultOutline(settings, analysis, bundle, n);
+  return defaultOutline(settings, analysis, bundle, n, profile);
 }
 
 function normalizeOutlineCount(
@@ -461,46 +725,48 @@ function normalizeOutlineCount(
   n: number,
   settings: EbookSettings,
   analysis: TopicAnalysis,
-  bundle: ResearchBundle
+  bundle: ResearchBundle,
+  profile: TopicProfile
 ): OutlineItem[] {
   const unique: OutlineItem[] = [];
   const seen = new Set<string>();
   for (const it of items) {
+    if (isBlockedOutlineTitle(it.title, profile)) continue;
     const k = it.title.toLowerCase().replace(/\s+/g, " ");
     if (seen.has(k)) continue;
     seen.add(k);
     unique.push(it);
   }
   if (unique.length > n) {
-    // merge extras into nearby chapters
     const keep = unique.slice(0, n);
     const extra = unique.slice(n);
     extra.forEach((e, i) => {
       const target = keep[i % keep.length];
       target.children = [...(target.children || []), { title: e.title, summary: e.summary }];
     });
-    return withPedagogy(keep, settings, analysis);
+    return withPedagogy(keep, settings, analysis, profile);
   }
   if (unique.length < n) {
-    const filler = defaultOutline(settings, analysis, bundle, n);
+    const filler = defaultOutline(settings, analysis, bundle, n, profile);
     for (const f of filler) {
       if (unique.length >= n) break;
-      if (!seen.has(f.title.toLowerCase())) {
+      if (!seen.has(f.title.toLowerCase()) && !isBlockedOutlineTitle(f.title, profile)) {
         unique.push(f);
         seen.add(f.title.toLowerCase());
       }
     }
   }
-  return withPedagogy(unique.slice(0, n), settings, analysis);
+  return withPedagogy(unique.slice(0, n), settings, analysis, profile);
 }
 
-function withPedagogy(items: OutlineItem[], settings: EbookSettings, analysis: TopicAnalysis): OutlineItem[] {
-  // Ensure first chapter is foundations / last is review if educational
+function withPedagogy(
+  items: OutlineItem[],
+  settings: EbookSettings,
+  analysis: TopicAnalysis,
+  profile: TopicProfile
+): OutlineItem[] {
   if (!items.length) return items;
-  const first = items[0].title.toLowerCase();
-  if (!/intro|foundat|overview|begin|basic/.test(first) && settings.type !== "Biography") {
-    // leave as-is; introduction is separate
-  }
+  if (profile.kind === "named-work-inquiry") return items;
   if (analysis.copyrightMode) {
     return items.map((it) => ({
       ...it,
@@ -515,9 +781,20 @@ function defaultOutline(
   settings: EbookSettings,
   analysis: TopicAnalysis,
   bundle: ResearchBundle,
-  n: number
+  n: number,
+  profile: TopicProfile
 ): OutlineItem[] {
-  const terms = extractKeyTerms(bundle.wikiPages.map((p) => p.extract).join("\n") || analysis.topic, 20);
+  if (profile.chapterPlan?.length) {
+    return profile.chapterPlan.slice(0, n).map((title) => ({
+      id: nanoid(8),
+      title: title.title,
+      summary: title.summary,
+      sourceIds: [],
+    }));
+  }
+  const terms = extractKeyTerms(bundle.wikiPages.map((p) => p.extract).join("\n") || analysis.topic, 20).filter(
+    (t) => !isBlockedOutlineTitle(t, profile)
+  );
   const templates: Record<string, string[]> = {
     programming: [
       "Getting started and setup",
@@ -617,20 +894,20 @@ function defaultOutline(
     ],
   };
   const cat = analysis.category;
-  const base =
-    templates[cat] ||
-    templates[
-      cat === "technical" || cat === "scientific" ? "default" : cat === "academic" ? "default" : "default"
-    ];
+  const useBiography = profile.allowBroadBiography && cat === "biography";
+  const base = useBiography ? templates.biography : templates[cat] || templates.default;
   const titles = [...base];
   while (titles.length < n) {
     const term = terms[titles.length % Math.max(1, terms.length)];
     titles.push(term ? `Focus study: ${term}` : `Further topics ${titles.length + 1}`);
   }
-  return titles.slice(0, n).map((title) => ({
-    id: nanoid(8),
-    title,
-    summary: `Researched chapter covering ${title.toLowerCase()} for ${settings.audience}.`,
-    sourceIds: [],
-  }));
+  return titles
+    .filter((title) => !isBlockedOutlineTitle(title, profile))
+    .slice(0, n)
+    .map((title) => ({
+      id: nanoid(8),
+      title,
+      summary: `Researched chapter covering ${title.toLowerCase()} for ${settings.audience}.`,
+      sourceIds: [],
+    }));
 }

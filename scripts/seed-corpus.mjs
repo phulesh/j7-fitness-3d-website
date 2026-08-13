@@ -188,7 +188,36 @@ School-level types include combination, decomposition, displacement, double disp
     tags: ["class 10", "science", "physics", "electricity"],
     extract: `Electricity is the set of physical phenomena associated with the presence and motion of matter possessing an electric charge. Electricity is related to magnetism, both being part of the phenomenon of electromagnetism, as described by Maxwell's equations. Common phenomena are related to electricity, including lightning, static electricity, electric heating, electric discharges and many others.
 In school physics, electric current is the flow of charge. Potential difference (voltage) is the work done per unit charge. Ohm's law states that V = IR for many metallic conductors at constant temperature. Resistance depends on material, length and cross-sectional area (R = ρl/A). Series and parallel combinations of resistors follow standard rules. Electric power is P = VI.
-A simple circuit contains a source, connecting wires, and a load. Heating effect of current is used in fuses and heaters. Magnetic effects of current are the basis of motors and galvanometers. Safety includes earthing, fuses, and not handling live wires with wet hands.`,
+    A simple circuit contains a source, connecting wires, and a load. Heating effect of current is used in fuses and heaters. Magnetic effects of current are the basis of motors and galvanometers. Safety includes earthing, fuses, and not handling live wires with wet hands.`,
+  },
+  {
+    title: "Untouchability",
+    url: "https://en.wikipedia.org/wiki/Untouchability",
+    organization: "Wikipedia",
+    tags: ["untouchability", "untouchables", "caste", "dalit", "ambedkar", "india"],
+    extract: `Untouchability is a form of social institution that legitimises and enforces practices against people belonging to particular social groups, historically in the Indian caste system. Those subjected to it were treated as polluting and excluded from wells, temples, schools, and the interior of the village. B. R. Ambedkar made the origin and persistence of untouchability the subject of his 1948 book The Untouchables: Who Were They and Why They Became Untouchables?
+In independent India, Article 17 of the Constitution abolishes untouchability and forbids its practice in any form. The Protection of Civil Rights Act and later the Scheduled Castes and Scheduled Tribes (Prevention of Atrocities) Act give statutory force to that ban. Legal abolition did not by itself end social exclusion.
+Ambedkar rejected explanations that treated untouchability as an eternal religious given. He asked a historical question: who the Untouchables had been, and by what process they became a hereditary outcaste group. His Broken Men theory and his discussion of beef-eating are interpretations advanced in that book, not uncontested archaeological facts.
+Related modern terms include Dalit and Scheduled Castes. These legal and political categories are not identical with Ambedkar's historical reconstruction of Broken Men on the outskirts of villages.`,
+  },
+  {
+    title: "The Untouchables: Who Were They and Why They Became Untouchables?",
+    url: "https://en.wikipedia.org/wiki/B._R._Ambedkar",
+    organization: "Wikipedia",
+    tags: ["ambedkar", "the untouchables", "broken men", "untouchability", "1948", "beef", "buddhism"],
+    extract: `The Untouchables: Who Were They and Why They Became Untouchables? is a historical study by B. R. Ambedkar, published in 1948. It is included among Dr. Babasaheb Ambedkar: Writings and Speeches. The book asks who the Untouchables were and why they became a hereditary excluded group.
+Ambedkar's central hypothesis is the Broken Men theory. He argued that defeated or broken tribal people attached themselves to settled village communities, lived on the outskirts, and later became Untouchables. He linked Broken Men to Buddhism and to contempt directed at Buddhists after the decline of Buddhism in India.
+A second proposed explanation concerns beef-eating. Ambedkar held that ancient Hindus, including Brahmins, had eaten beef; that Brahmins later gave up beef and made the cow sacred as they competed with Buddhism; that non-Brahmins followed; and that Broken Men continued to eat the flesh of dead cows, which then became a mark of untouchability. These dietary and chronological claims are Ambedkar's interpretations of textual evidence, not universally established historical facts.
+The book should be read as a reasoned thesis with stated assumptions. Later scholars have discussed, extended, or criticised the Broken Men argument. Independent India's Constitution, drafted by a committee chaired by Ambedkar, abolishes untouchability in Article 17 — a legal fact distinct from the 1948 historical hypothesis.`,
+  },
+  {
+    title: "Article 17 of the Constitution of India — Abolition of Untouchability",
+    url: "https://legislative.gov.in/constitution-of-india/",
+    organization: "Government of India — Legislative Department",
+    tags: ["article 17", "constitution", "untouchability", "ambedkar", "law"],
+    extract: `Article 17 of the Constitution of India is titled Abolition of Untouchability. It states: Untouchability is abolished and its practice in any form is forbidden. The enforcement of any disability arising out of Untouchability shall be an offence punishable in accordance with law.
+This provision is primary-source constitutional law. It belongs to Part III (Fundamental Rights). It is distinct from B. R. Ambedkar's 1948 historical book The Untouchables, which offered a hypothesis about origins. The constitutional text establishes the modern legal status of untouchability; it does not by itself prove or disprove the Broken Men theory or the beef-eating explanation.
+Parliament gave effect to Article 17 through statutes that punish the enforcement of disabilities arising from untouchability. Official copies of the Constitution are published by the Legislative Department of the Government of India.`,
   },
 ];
 

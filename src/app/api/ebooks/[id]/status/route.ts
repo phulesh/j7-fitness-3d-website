@@ -23,6 +23,15 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
       url: s.url,
       tier: s.tier,
       used: s.used,
+      snippet: s.snippet,
+      relevanceScore: s.relevanceScore,
+      authorityScore: s.authorityScore,
+      primarySource: s.primarySource,
+      academicSource: s.academicSource,
+      reasonForInclusion: s.reasonForInclusion,
     })),
+    rejectedSources: ebook.rejectedSources || [],
+    researchQuality: ebook.researchQuality,
+    researchQuestions: ebook.analysis?.researchQuestions || [],
   });
 }

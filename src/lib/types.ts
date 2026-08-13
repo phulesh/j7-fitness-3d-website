@@ -125,6 +125,12 @@ export type SourceTier =
   | 8
   | 9;
 
+export type ClaimKind =
+  | "primary-source-evidence"
+  | "author-interpretation"
+  | "later-scholarly-interpretation"
+  | "contested-uncertain";
+
 export interface SourceRecord {
   id: number;
   title: string;
@@ -140,6 +146,39 @@ export interface SourceRecord {
   score: number;
   used: boolean;
   language?: string;
+  relevanceScore?: number;
+  authorityScore?: number;
+  primarySource?: boolean;
+  academicSource?: boolean;
+  reasonForInclusion?: string;
+}
+
+export interface RejectedSource {
+  title: string;
+  url: string;
+  snippet?: string;
+  provider?: string;
+  relevanceScore: number;
+  rejectionReason: string;
+}
+
+export interface ResearchQualityReport {
+  relevantCount: number;
+  rejectedCount: number;
+  generationBlocked: boolean;
+  contaminationReason?: string;
+  approved: {
+    id: number;
+    title: string;
+    url: string;
+    organization: string;
+    relevanceScore: number;
+    authorityScore: number;
+    primarySource: boolean;
+    academicSource: boolean;
+    reasonForInclusion: string;
+  }[];
+  rejected: RejectedSource[];
 }
 
 export interface ExtractedFact {
@@ -150,6 +189,7 @@ export interface ExtractedFact {
   verifiedBy: number;
   category: "definition" | "date" | "statistic" | "event" | "concept" | "process" | "quote" | "other";
   entities: string[];
+  claimKind?: ClaimKind;
 }
 
 export interface ChapterSection {
@@ -244,6 +284,13 @@ export interface TopicAnalysis {
   searchQueries: string[];
   wikiLanguage: string;
   summary: string;
+  researchQuestions?: string[];
+  topicKind?: string;
+  workTitle?: string;
+  authorName?: string;
+  focusTerms?: string[];
+  allowBiography?: boolean;
+  allowScientificPapers?: boolean;
 }
 
 export interface EbookSettings {
@@ -314,6 +361,8 @@ export interface EbookDocument {
   glossary: GlossaryEntry[];
   faqs: FaqItem[];
   sources: SourceRecord[];
+  rejectedSources?: RejectedSource[];
+  researchQuality?: ResearchQualityReport;
   facts: ExtractedFact[];
   cover: {
     style: CoverStyle;

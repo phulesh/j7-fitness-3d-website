@@ -16,8 +16,8 @@ import type {
   ChapterImage,
   FactFlag,
 } from "../types";
-import type { WikiPage } from "../research/wikipedia";
 import type { ResearchBundle } from "../research/pipeline";
+import { buildTopicProfile, claimKindLabel, classifyClaim } from "../research/relevance";
 
 export function sourceListForPrompt(sources: SourceRecord[]): string {
   return sources
@@ -129,6 +129,11 @@ Include exercises: ${settings.includeExercises}
 Include MCQs: ${settings.includeMcqs}
 Copyright-safe mode: ${analysis.copyrightMode}
 Sensitive domain: ${analysis.sensitiveDomain}
+Topic kind: ${analysis.topicKind || analysis.category}
+Research questions: ${(analysis.researchQuestions || []).slice(0, 12).join(" | ")}
+
+Do not write a generic biography of the author or unrelated subjects (communism, Indo-Aryan migrations, popular culture, complete works) unless the chapter title requires it.
+Do not present hypotheses as established historical facts. Label major claims as Primary-source evidence, Author's interpretation, Later scholarly interpretation, or Contested/uncertain.
 
 Return JSON only with this shape:
 {
@@ -253,7 +258,8 @@ export function writeChapterFromSources(opts: {
   const lang = analysis.outputLanguage;
 
   const relevant = collectRelevantPassages(item, bundle, sourceIds);
-  const sections = buildSections(item, relevant, settings, analysis);
+  const profile = buildTopicProfile(analysis.topic, { category: analysis.category, type: settings.type });
+  const sections = buildSections(item, relevant, settings, analysis, profile);
   const facts = pickFacts(item, bundle.facts);
   const keyPoints = makeKeyPoints(relevant, facts);
   const objectives = makeObjectives(item, sections, settings);
@@ -419,10 +425,20 @@ function buildSections(
   item: OutlineItem,
   passages: Passage[],
   settings: EbookSettings,
-  analysis: TopicAnalysis
+  analysis: TopicAnalysis,
+  profile?: ReturnType<typeof buildTopicProfile>
 ): ChapterSection[] {
   const labels = labelsFor(analysis.outputLanguage);
   const sections: ChapterSection[] = [];
+
+  if (profile?.claimDiscipline === "historical-hypothesis") {
+    sections.push({
+      id: nanoid(8),
+      heading: "How to read claims in this chapter",
+      html: `<p>Major historical statements below are classified as <strong>primary-source evidence</strong>, <strong>the author's interpretation</strong>, <strong>later scholarly interpretation</strong>, or <strong>contested/uncertain</strong>. Ambedkar's hypotheses — including the Broken Men theory and the beef-eating explanation — are not presented as universally established facts.</p>`,
+      sourceIds: [],
+    });
+  }
 
   const introBits = passages.slice(0, 2);
   if (introBits.length) {
@@ -476,6 +492,7 @@ function buildSections(
 
 function renderAttributed(text: string, sourceIds: number[], analysis: TopicAnalysis): string {
   const cite = sourceIds.map((id) => `<sup class="cite">[${id}]</sup>`).join("");
+  const profile = buildTopicProfile(analysis.topic, { category: analysis.category });
   const chunks = text
     .split(/\n{2,}/)
     .map((p) => p.trim())
@@ -493,7 +510,10 @@ function renderAttributed(text: string, sourceIds: number[], analysis: TopicAnal
           return s;
         })
         .join(" ");
-      return `<p>${escapeHtml(body)}${i === 0 ? cite : ""}</p>`;
+      const kind =
+        profile.claimDiscipline === "historical-hypothesis" ? classifyClaim(body, profile) : undefined;
+      const tag = kind ? `<span class="claim-kind">${escapeHtml(claimKindLabel(kind))}.</span> ` : "";
+      return `<p>${tag}${escapeHtml(body)}${i === 0 ? cite : ""}</p>`;
     })
     .join("");
 }
@@ -568,7 +588,10 @@ function makeMistakes(item: OutlineItem, analysis: TopicAnalysis): string[] {
     "Memorising a definition without being able to give an example or counter-example.",
   ];
   if (analysis.category === "exam") common.push("Skipping NCERT / official syllabus wording and studying only coaching summaries.");
-  if (analysis.category === "historical") common.push("Collapsing debated historiography into a single 'what really happened' story without sources.");
+  if (analysis.category === "historical") {
+    common.push("Collapsing debated historiography into a single 'what really happened' story without sources.");
+    common.push("Presenting an author's hypothesis (for example a causal theory of origins) as if it were universally established fact.");
+  }
   if (analysis.sensitiveDomain !== "none")
     common.push("Using this educational material as a substitute for a licensed professional.");
   return common.slice(0, 4);
@@ -746,8 +769,13 @@ export async function writeFrontMatter(opts: {
     analysis.copyrightMode
       ? "It is an original study guide. It does not reproduce any copyrighted book chapter-by-chapter."
       : "Factual claims are tied to the numbered references at the end. Where a point could not be confirmed in more than one reliable source, that uncertainty is stated.",
+    analysis.topicKind === "named-work-inquiry"
+      ? "Historical hypotheses advanced by the author under study are labelled as interpretation or as contested, not as settled fact."
+      : undefined,
     `The book covers: ${outline.map((o) => o.title).slice(0, 8).join("; ")}.`,
-  ].join("\n\n");
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   const conclusion = [
     `This volume set out to give a source-backed path through “${analysis.normalizedTitle}”.`,
@@ -805,6 +833,9 @@ export async function writeFrontMatter(opts: {
   } else if (analysis.sensitiveDomain === "scientific") {
     disclaimer =
       "Science note: Methods and measurements are described from cited sources. Where research is unsettled, the text says so. Check primary papers and official agencies for the latest consensus.";
+  } else if (analysis.topicKind === "named-work-inquiry" || analysis.category === "historical") {
+    disclaimer =
+      "Historical note: Claims drawn from a primary author are labelled as that author's interpretation when they are hypotheses. They are not presented as universally established facts. Prefer primary texts, official legal sources, and peer-reviewed scholarship listed in the references.";
   }
 
   return { introduction, conclusion, faqs, glossary: glossary.slice(0, 40), disclaimer };

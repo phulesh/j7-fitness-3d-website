@@ -577,7 +577,12 @@ function EbookInner() {
             {tab === "references" && (
               <section className="mt-6 paper-card rounded-2xl p-5">
                 <h2 className="font-display text-xl">References</h2>
-                <p className="mt-1 text-sm text-ink-400">These URLs were collected during research for this title.</p>
+                <p className="mt-1 text-sm text-ink-400">
+                  These URLs were collected and relevance-filtered for this title.
+                  {doc.researchQuality
+                    ? ` Research Quality: ${doc.researchQuality.relevantCount} relevant / ${doc.researchQuality.rejectedCount} rejected.`
+                    : ""}
+                </p>
                 <ol className="mt-4 space-y-3 text-sm">
                   {doc.sources.map((s) => (
                     <li key={s.id}>
@@ -585,7 +590,13 @@ function EbookInner() {
                       <a href={s.url} className="underline" target="_blank" rel="noreferrer">
                         {s.url}
                       </a>
-                      <span className="text-ink-400"> · tier {s.tier}</span>
+                      <span className="text-ink-400">
+                        {" "}
+                        · relevance {s.relevanceScore ?? "—"} · authority {s.authorityScore ?? "—"}
+                        {s.primarySource ? " · primary" : ""}
+                        {s.academicSource ? " · academic" : ""}
+                      </span>
+                      {s.reasonForInclusion && <p className="text-ink-400">{s.reasonForInclusion}</p>}
                     </li>
                   ))}
                 </ol>

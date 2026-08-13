@@ -1,6 +1,7 @@
 import { detectScriptLanguage, resolveOutputLanguage, wikiLang } from "../language";
 import { wikiSearch } from "../research/wikipedia";
 import { searchCorpus } from "../research/corpus";
+import { buildTopicProfile, isAmbedkarUntouchablesTopic } from "../research/relevance";
 import type { EbookSettings, TopicAnalysis, TopicCategory, SyllabusInfo } from "../types";
 
 const COPYRIGHT_HINTS =
@@ -19,7 +20,10 @@ export async function analyzeTopic(settings: EbookSettings, syllabusText?: strin
     category === "financial";
 
   const wikiLanguage = wikiLang(outputLanguage);
-  const queries = buildSearchQueries(topic, category, settings, outputLanguage);
+  const profile = buildTopicProfile(topic, { category, type: settings.type, language: outputLanguage });
+  const queries = profile.searchQueries.length
+    ? profile.searchQueries
+    : buildSearchQueries(topic, category, settings, outputLanguage);
 
   let summary = `Educational ebook on “${topic}” for ${settings.audience} at ${settings.difficulty} level.`;
   const local = searchCorpus(topic, 1);
@@ -53,11 +57,21 @@ export async function analyzeTopic(settings: EbookSettings, syllabusText?: strin
     searchQueries: queries,
     wikiLanguage,
     summary,
+    researchQuestions: profile.researchQuestions,
+    topicKind: profile.kind,
+    workTitle: profile.workTitle,
+    authorName: profile.author,
+    focusTerms: profile.coreTerms,
+    allowBiography: profile.allowBroadBiography,
+    allowScientificPapers: profile.allowScientificPapers,
   };
 }
 
 export function categorize(topic: string, type: string): TopicCategory {
   const t = `${topic} ${type}`.toLowerCase();
+  if (isAmbedkarUntouchablesTopic(topic) || /\b(untouchab|broken men|dalit history|caste history)\b/.test(t)) {
+    return "historical";
+  }
   if (/\b(python|javascript|java\b|c\+\+|programming|react|sql|linux|git|html|css|api|coding)\b/.test(t))
     return "programming";
   if (/\b(machine learning|data science|neural|algorithm|engineering|software|network|database|cloud|ai |artificial intelligence|automation)\b/.test(t))
@@ -67,8 +81,13 @@ export function categorize(topic: string, type: string): TopicCategory {
   if (/\b(constitution|law|ipc|crpc|article \d|supreme court|legal|rights)\b/.test(t)) return "legal";
   if (/\b(medicine|anatomy|physiology|disease|clinical|pharma|diagnosis|who |cdc )\b/.test(t)) return "medical";
   if (/\b(finance|stock|invest|accounting|tax|economy|banking|gdp)\b/.test(t)) return "financial";
-  if (/\b(history|civilization|empire|war|independence|ancient|medieval)\b/.test(t)) return "historical";
-  if (/\b(biography|life of|autobiography)\b/.test(t) || type === "Biography") return "biography";
+  if (/\b(history|civilization|empire|war|independence|ancient|medieval|who were they|why they became)\b/.test(t))
+    return "historical";
+  if (/\b(biography|life of|autobiography)\b/.test(t) || type === "Biography") {
+    // A named historical work plus an author is not a life-and-works biography.
+    if (/untouchab|annihilation of caste|who were the shudras/.test(t)) return "historical";
+    return "biography";
+  }
   if (/\b(physics|chemistry|biology|science|quantum|photosynthesis|cell |atom)\b/.test(t)) return "scientific";
   if (/\b(english speaking|grammar|vocabulary|language course|ielts|toefl)\b/.test(t)) return "language";
   if (type.includes("Professional") || /\b(management|marketing|leadership|career)\b/.test(t)) return "professional";
