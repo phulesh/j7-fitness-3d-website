@@ -23,6 +23,7 @@ export async function GET(req: Request) {
     language: e.outputLanguage || e.language,
     outputLanguage: e.outputLanguage || e.language,
     type: e.type,
+    author: e.settings?.authorName || "Folio Research",
     status: e.status,
     wordCount: e.wordCount,
     chapterCount: e.chapterCount,

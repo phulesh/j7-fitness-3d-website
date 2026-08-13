@@ -15,13 +15,29 @@ export interface ChatMessage {
 export async function chat(messages: ChatMessage[], opts: { temperature?: number; maxTokens?: number } = {}): Promise<string | null> {
   const key = process.env.AI_API_KEY;
   if (!key) return null;
-  try {
-    if (key.startsWith("sk-ant")) return anthropicChat(key, messages, opts);
-    return openAiChat(key, messages, opts);
-  } catch (e) {
-    console.error("AI chat failed", e);
-    return null;
+  let lastError: unknown;
+  // Transient provider/network failures must not discard a finished research
+  // stage or previously written chapter. Callers already persist stage output;
+  // this retry only repeats the current bounded request.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const value = key.startsWith("sk-ant")
+        ? await anthropicChat(key, messages, opts)
+        : await openAiChat(key, messages, opts);
+      if (value) return value;
+      lastError = new Error("AI provider returned no content");
+    } catch (error) {
+      lastError = error;
+    }
+    if (attempt < 2) {
+      const wait = 700 * 2 ** attempt + Math.floor(Math.random() * 250);
+      await new Promise((resolve) => setTimeout(resolve, wait));
+    }
   }
+  console.error("AI chat failed after retries", lastError);
+  // Deterministic research-backed writers remain available when the optional
+  // AI service is interrupted, so a book can continue rather than restarting.
+  return null;
 }
 
 async function openAiChat(key: string, messages: ChatMessage[], opts: { temperature?: number; maxTokens?: number }) {

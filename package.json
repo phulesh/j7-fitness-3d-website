@@ -12,6 +12,7 @@
     "test:upgrade": "npx --yes tsx src/lib/ebook-selftest.ts",
     "test:flow": "npx --yes tsx src/lib/folio-flow-selftest.ts",
     "test:3d": "npx --yes tsx src/lib/flipbook-selftest.ts",
+    "test:complete": "tsx src/lib/complete-pipeline-selftest.ts",
     "postinstall": "node scripts/ensure-dirs.js && node scripts/seed-corpus.mjs"
   },
   "dependencies": {
@@ -50,6 +51,7 @@
     "eslint-config-next": "^14.2.21",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
+    "tsx": "^4.23.12",
     "typescript": "^5.7.2"
   }
 }

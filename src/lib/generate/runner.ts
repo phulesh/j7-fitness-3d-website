@@ -9,6 +9,7 @@ import type { Chapter, EbookDocument, OutlineItem, ResearchRunState } from "../t
 import { isHindiOutput } from "../language";
 import { documentNeedsHindiRegen, ensureHindiChapter, localizeOutline } from "./hindi";
 import { friendlyError } from "../errors";
+import { runFinalQualityCheck } from "./quality";
 
 const RESEARCH_TIMEOUT_MS = Number(process.env.RESEARCH_TIMEOUT_MS || 7 * 60 * 1000);
 
@@ -70,12 +71,13 @@ export function startGeneration(
       console.error("Generation failed", err);
       const raw = err instanceof Error ? err.message : "Generation interrupted.";
       const message = friendlyError(raw);
+      const saved = getEbook(ebookId);
       updateEbook(ebookId, {
         status: "failed",
         error: message,
         progress: {
           step: "failed",
-          percent: 0,
+          percent: saved?.progress?.percent || 0,
           message: "Generation interrupted. Your ebook data has been saved. Resume generation.",
           detail: message,
         },
@@ -385,7 +387,7 @@ async function generateEbook(
     return;
   }
 
-  progress("analyzing", 4, "Researching topic...", "analyzing", "Detecting language, category, and source strategy");
+  progress("understanding", 4, "Understanding topic...", "analyzing", "Detecting language, category, and source strategy");
 
   const vague = detectVagueness(doc.settings.topic);
   if (vague) {
@@ -436,7 +438,8 @@ async function generateEbook(
     progress("researching", 20, "Finding reliable sources...", "researching", msg);
   });
 
-  progress("outlining", 38, "Creating ebook structure...", "outlining");
+  progress("verifying_sources", 30, "Verifying sources and provenance...", "researching", `${bundle.sources.length} reliable sources retained; ${bundle.rejectedSources.length} rejected`);
+  progress("outlining", 38, "Building a topic-specific chapter outline...", "outlining");
 
   if (consumeCancel(ebookId)) {
     updateEbook(ebookId, {
@@ -521,12 +524,13 @@ export async function continueFromOutline(ebookId: string, jobId: string) {
   const p = continueFromOutlineInner(ebookId, jobId)
     .catch((err) => {
       console.error("continueFromOutline failed", err);
+      const saved = getEbook(ebookId);
       updateEbook(ebookId, {
         status: "failed",
         error: friendlyError(err instanceof Error ? err.message : "Generation interrupted."),
         progress: {
           step: "failed",
-          percent: 0,
+          percent: saved?.progress?.percent || 0,
           message: "Generation interrupted. Your ebook data has been saved. Resume generation.",
         },
       });
@@ -723,8 +727,11 @@ async function writeChapters(doc: EbookDocument, jobId: string, bundle: any, sta
   }
   const finalCheck = documentNeedsHindiRegen({ ...checkDoc, chapters });
 
+  // Persist all authored content before export/QA. If packaging is interrupted,
+  // Resume Generation starts from these completed chapters instead of writing
+  // them again.
   updateEbook(doc.id, {
-    status: "complete",
+    status: "exporting",
     introduction: matter.introduction,
     conclusion: matter.conclusion,
     faqs: matter.faqs,
@@ -733,17 +740,32 @@ async function writeChapters(doc: EbookDocument, jobId: string, bundle: any, sta
     chapters,
     wordCount,
     chapterCount: chapters.length,
-    lastCompletedStage: "complete",
+    lastCompletedStage: "factcheck",
     languageCheck: {
       expected: doc.analysis.outputLanguage,
       passed: finalCheck.ok,
       regeneratedSections: langCheck.sections,
       detail: finalCheck.ok ? undefined : "Some sections were rewritten to match the selected output language.",
     },
-    progress: { step: "complete", percent: 100, message: "Preparing download..." },
+    progress: { step: "generating_figures", percent: 84, message: "Generating and validating figures..." },
     error: undefined,
   });
-  updateJob(jobId, { status: "complete", step: "complete", percent: 100, message: "Complete", lastChapterIndex: chapters.length - 1 });
+  updateJob(jobId, { status: "running", step: "generating_figures", percent: 84, message: "Generating figures", lastChapterIndex: chapters.length - 1 });
+
+  const final = await runFinalQualityCheck(doc.id, (stage, percent, message) => {
+    updateEbook(doc.id, { status: "exporting", progress: { step: stage, percent, message } });
+    updateJob(jobId, { status: "running", step: stage, percent, message, lastChapterIndex: chapters.length - 1 });
+  });
+
+  updateEbook(doc.id, {
+    status: "complete",
+    lastCompletedStage: "complete",
+    qualityReport: final.report,
+    exports: final.exports,
+    progress: { step: "complete", percent: 100, message: "Book ready" },
+    error: undefined,
+  });
+  updateJob(jobId, { status: "complete", step: "complete", percent: 100, message: "Ready", lastChapterIndex: chapters.length - 1 });
 }
 
 export async function regenerateChapter(ebookId: string, chapterIndex: number, instruction?: string) {

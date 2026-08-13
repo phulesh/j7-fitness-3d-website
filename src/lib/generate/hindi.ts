@@ -542,6 +542,7 @@ export function composeHindiFrontMatter(opts: {
     glossary.push({
       term,
       definition: keepIfHindi(f.text) || `स्रोत के अनुसार: ${f.text}`,
+      context: "इस पुस्तक के ऐतिहासिक और सामाजिक विश्लेषण में प्रयुक्त पद।",
       sourceIds: f.sourceIds,
     });
   }

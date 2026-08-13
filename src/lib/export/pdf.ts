@@ -4,6 +4,7 @@ import PDFDocument from "pdfkit";
 import type { EbookDocument, Chapter, SourceRecord } from "../types";
 import { isRtl } from "../language";
 import { labelsFor } from "../generate/write";
+import { groupReferences, sourceCitation } from "../references";
 
 type PdfFonts = {
   regular: string;
@@ -101,6 +102,9 @@ export async function exportPdf(doc: EbookDocument, destPath: string): Promise<s
   const SERIFBOLD = "SerifBold";
 
   const used = new Set<number>();
+  const tocEntries: { title: string; page: number }[] = [];
+  let tocPageIndex = -1;
+  const currentPageNumber = () => pdf.bufferedPageRange().count;
   const markCites = (text: string) => {
     const citationPattern = /\[(\d+)\]/g;
     let match: RegExpExecArray | null;
@@ -154,56 +158,57 @@ export async function exportPdf(doc: EbookDocument, destPath: string): Promise<s
     pdf.fillColor("#6B5E52").text(`Last verified: ${doc.syllabus.lastVerified || "n/a"}`);
   }
 
+  // Preface
+  pdf.addPage();
+  pdf.font(SERIFBOLD).fontSize(20).fillColor("#1C1410").text(lang === "hi" ? "प्राक्कथन" : "Preface");
+  pdf.moveDown(0.8);
+  pdf.font(BODY).fontSize(11).text(lang === "hi"
+    ? "यह पुस्तक विश्वसनीय स्रोतों, स्पष्ट उद्धरणों और तथ्य तथा व्याख्या के भेद के साथ तैयार की गई है।"
+    : "This book was prepared with reliable sources, traceable citations, and a clear distinction between evidence and interpretation.");
+
   // TOC
   if (doc.settings.includeToc) {
     pdf.addPage();
-    pdf.font(SERIFBOLD).fontSize(22).fillColor("#1C1410").text(labels.toc);
-    pdf.moveDown(1);
-    let n = 1;
-    pdf.font(BODY).fontSize(12).fillColor("#1C1410").text(`${n}. ${labels.introduction}`);
-    n++;
-    for (const ch of doc.chapters) {
-      pdf.moveDown(0.25);
-      pdf.text(`${n}. ${ch.title}`);
-      n++;
-    }
-    pdf.moveDown(0.25);
-    pdf.text(`${n++}. ${labels.conclusion}`);
-    if (doc.settings.includeGlossary && doc.glossary.length) pdf.text(`${n++}. ${labels.glossary}`);
-    if (doc.faqs.length) pdf.text(`${n++}. ${labels.faq}`);
-    if (doc.settings.includeReferences) pdf.text(`${n++}. ${labels.references}`);
+    tocPageIndex = currentPageNumber() - 1;
+    // Entries are written after layout, when their real page numbers are known.
   }
 
   // Introduction
   pdf.addPage();
+  tocEntries.push({ title: labels.introduction, page: currentPageNumber() });
   pdf.font(SERIFBOLD).fontSize(20).fillColor("#1C1410").text(labels.introduction);
   pdf.moveDown(0.8);
   writeHtmlish(pdf, markCites(doc.introduction), BODY, BOLD);
 
   for (const ch of doc.chapters) {
     pdf.addPage();
+    tocEntries.push({ title: ch.title, page: currentPageNumber() });
     writeChapter(pdf, ch, BODY, BOLD, SERIFBOLD, labels, markCites);
   }
 
   pdf.addPage();
+  tocEntries.push({ title: labels.conclusion, page: currentPageNumber() });
   pdf.font(SERIFBOLD).fontSize(20).text(labels.conclusion);
   pdf.moveDown(0.8);
   writeHtmlish(pdf, markCites(doc.conclusion), BODY, BOLD);
 
   if (doc.settings.includeGlossary && doc.glossary.length) {
     pdf.addPage();
+    tocEntries.push({ title: labels.glossary, page: currentPageNumber() });
     pdf.font(SERIFBOLD).fontSize(20).text(labels.glossary);
     pdf.moveDown(0.8);
     for (const g of doc.glossary) {
       const cite = g.sourceIds.map((id) => `[${id}]`).join("");
       pdf.font(BOLD).fontSize(11).fillColor("#1C1410").text(g.term, { continued: true });
       pdf.font(BODY).fontSize(11).text(`  —  ${g.definition} ${cite}`);
+      if (g.context) pdf.font(BODY).fontSize(9).fillColor("#6B5E52").text(g.context);
       pdf.moveDown(0.35);
     }
   }
 
   if (doc.faqs.length) {
     pdf.addPage();
+    tocEntries.push({ title: labels.faq, page: currentPageNumber() });
     pdf.font(SERIFBOLD).fontSize(20).text(labels.faq);
     pdf.moveDown(0.8);
     for (const f of doc.faqs) {
@@ -216,21 +221,36 @@ export async function exportPdf(doc: EbookDocument, destPath: string): Promise<s
 
   if (doc.settings.includeReferences) {
     pdf.addPage();
+    tocEntries.push({ title: labels.references, page: currentPageNumber() });
     pdf.font(SERIFBOLD).fontSize(20).text(labels.references);
     pdf.moveDown(0.6);
     pdf.font(BODY).fontSize(9).fillColor("#6B5E52").text("Numbered references correspond to citations in the text. Prefer higher-tier official sources.");
     pdf.moveDown(0.8);
     const list = sortSources(doc.sources, used);
-    for (const s of list) {
-      const line = `[${s.id}] ${s.title} — ${s.organization} — ${s.url}`;
-      pdf.font(BODY).fontSize(9).fillColor("#1C1410").text(line, {
-        link: s.url,
-        underline: false,
-        align: "left",
-      });
-      pdf.fillColor("#1C4C7C").fontSize(8).text(s.url, { link: s.url, underline: true });
-      pdf.moveDown(0.35);
+    for (const group of groupReferences(list)) {
+      ensureSpace(pdf, 72);
+      pdf.moveDown(0.5);
+      pdf.font(BOLD).fontSize(11).fillColor("#1C1410").text((doc.outputLanguage || doc.language) === "hi" ? `${group.titleHi} · ${group.title}` : group.title);
+      pdf.moveDown(0.3);
+      for (const s of group.sources) {
+        const line = `[${s.id}] ${sourceCitation(s)}`;
+        pdf.font(BODY).fontSize(9).fillColor("#1C1410").text(line, { align: "left" });
+        if (/^https?:\/\//.test(s.url)) pdf.fillColor("#1C4C7C").fontSize(8).text(s.url, { link: s.url, underline: true });
+        pdf.moveDown(0.35);
+      }
     }
+  }
+
+  if (tocPageIndex >= 0) {
+    pdf.switchToPage(tocPageIndex);
+    pdf.font(SERIFBOLD).fontSize(22).fillColor("#1C1410").text(labels.toc, 64, 64);
+    let y = 112;
+    tocEntries.forEach((entry, index) => {
+      pdf.font(BODY).fontSize(11).fillColor("#1C1410").text(`${index + 1}. ${entry.title}`, 64, y, { width: 390, lineBreak: false });
+      pdf.text(String(entry.page), 470, y, { width: 60, align: "right", lineBreak: false });
+      pdf.moveTo(64, y + 14).lineTo(530, y + 14).strokeColor("#E0D5C5").lineWidth(0.35).stroke();
+      y += 25;
+    });
   }
 
   // Page numbers / headers
@@ -302,8 +322,9 @@ function writeChapter(
       try {
         ensureSpace(pdf, 220);
         pdf.image(raster, { fit: [440, 240], align: "center" });
-        pdf.font(BODY).fontSize(8).fillColor("#6B5E52").text(img.figureLabel || img.caption);
-        pdf.text(img.credit);
+        pdf.font(BOLD).fontSize(8).fillColor("#3A2C22").text(img.figureLabel || img.caption);
+        if (img.caption && img.caption !== img.figureLabel) pdf.font(BODY).text(img.caption);
+        pdf.font(BODY).fillColor("#6B5E52").text(`Source: ${img.credit}`);
         if (img.verifiedHistoricalPhoto === false) {
           pdf.text("व्याख्यात्मक चित्र — यह ऐतिहासिक फोटोग्राफ नहीं है।");
         }
@@ -321,7 +342,7 @@ function writeChapter(
     ensureSpace(pdf, 80);
     pdf.font(BOLD).fontSize(13).fillColor("#1C1410").text(sec.heading);
     pdf.moveDown(0.35);
-    writeHtmlish(pdf, markCites(sec.html), BODY, BOLD);
+    writeHtmlish(pdf, markCites(sec.html.replace(/<figure\b[^>]*>[\s\S]*?<\/figure>/gi, "")), BODY, BOLD);
     pdf.moveDown(0.4);
   }
 

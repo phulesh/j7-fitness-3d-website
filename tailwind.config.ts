@@ -46,10 +46,10 @@ const config: Config = {
         unsupported: "#9B2335",
       },
       fontFamily: {
-        serif: ["var(--font-serif)", "Source Serif 4", "Georgia", "serif"],
-        sans: ["var(--font-sans)", "Figtree", "system-ui", "sans-serif"],
+        serif: ["var(--font-serif)", "var(--font-devanagari)", "Noto Sans Devanagari", "Georgia", "serif"],
+        sans: ["var(--font-sans)", "var(--font-devanagari)", "Noto Sans Devanagari", "system-ui", "sans-serif"],
         devanagari: ["var(--font-devanagari)", "Noto Sans Devanagari", "serif"],
-        display: ["var(--font-display)", "Fraunces", "Georgia", "serif"],
+        display: ["var(--font-display)", "var(--font-devanagari)", "Noto Sans Devanagari", "Georgia", "serif"],
       },
       boxShadow: {
         book: "0 25px 50px -12px rgba(28, 20, 16, 0.25), 0 0 0 1px rgba(28,20,16,0.06)",

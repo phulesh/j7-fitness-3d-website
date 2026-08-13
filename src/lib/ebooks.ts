@@ -1,3 +1,5 @@
+import fs from "fs";
+import path from "path";
 import { nanoid } from "nanoid";
 import { getStore, persist, nowIso } from "./db";
 import { normalizeOutputLanguage } from "./language";
@@ -72,6 +74,66 @@ export function createEbook(userId: string, settings: EbookSettings): EbookDocum
   getStore().ebooks.push(serialize(doc));
   persist();
   return doc;
+}
+
+export function duplicateEbook(id: string, userId: string): EbookDocument | null {
+  const source = getEbook(id, userId);
+  if (!source) return null;
+  const copy = createEbook(userId, {
+    ...source.settings,
+    title: `${source.title} — Copy`,
+    customTitle: `${source.title} — Copy`,
+    topic: source.settings.topic,
+  });
+
+  const oldImageDir = path.join(process.cwd(), "data", "images", source.id);
+  const newImageDir = path.join(process.cwd(), "data", "images", copy.id);
+  if (fs.existsSync(oldImageDir)) fs.cpSync(oldImageDir, newImageDir, { recursive: true });
+  const oldApi = `/api/ebooks/${source.id}/images/`;
+  const newApi = `/api/ebooks/${copy.id}/images/`;
+  const chapters = structuredClone(source.chapters).map((chapter: Chapter) => ({
+    ...chapter,
+    id: nanoid(10),
+    sections: chapter.sections.map((section) => ({
+      ...section,
+      id: nanoid(8),
+      html: section.html.split(oldApi).join(newApi),
+    })),
+    images: (chapter.images || []).map((image) => ({
+      ...image,
+      id: nanoid(8),
+      url: image.url.split(oldApi).join(newApi),
+      sourceUrl: image.sourceUrl?.split(oldApi).join(newApi),
+      localPath: image.localPath ? path.join(newImageDir, path.basename(image.localPath)) : undefined,
+    })),
+  }));
+
+  let cover = structuredClone(source.cover);
+  if (source.cover?.pngPath && fs.existsSync(source.cover.pngPath)) {
+    const nextCover = path.join(process.cwd(), "data", "covers", `${copy.id}.png`);
+    fs.mkdirSync(path.dirname(nextCover), { recursive: true });
+    fs.copyFileSync(source.cover.pngPath, nextCover);
+    cover = { ...cover, pngPath: nextCover };
+  }
+
+  updateEbook(copy.id, {
+    ...structuredClone(source),
+    id: copy.id,
+    ebookId: copy.id,
+    userId,
+    title: `${source.title} — Copy`,
+    customTitle: `${source.title} — Copy`,
+    settings: { ...source.settings, title: `${source.title} — Copy`, customTitle: `${source.title} — Copy` },
+    chapters,
+    sources: structuredClone(source.sources),
+    cover,
+    exports: undefined,
+    qualityReport: undefined,
+    generationRequestId: undefined,
+    createdAt: copy.createdAt,
+    updatedAt: copy.updatedAt,
+  });
+  return getEbook(copy.id, userId);
 }
 
 export function findRecentDuplicateDraft(userId: string, topic: string, windowMs = 8000): EbookDocument | null {
@@ -211,6 +273,15 @@ export function deleteEbook(id: string, userId: string) {
   store.downloads = store.downloads.filter((d) => d.ebookId !== id);
   store.operations = (store.operations || []).filter((o) => o.ebookId !== id);
   persist();
+  // Deletion is explicit and confirmed in the Library. Remove only this
+  // volume's generated assets; never touch any other ebook or user record.
+  for (const asset of [
+    path.join(process.cwd(), "data", "images", id),
+    path.join(process.cwd(), "data", "exports", id),
+    path.join(process.cwd(), "data", "covers", `${id}.png`),
+  ]) {
+    try { fs.rmSync(asset, { recursive: true, force: true }); } catch {}
+  }
   return true;
 }
 
@@ -408,6 +479,7 @@ export function clientEbook(doc: EbookDocument) {
     outputLanguage: doc.outputLanguage || doc.language,
     customTitle: doc.customTitle || doc.settings?.customTitle || doc.settings?.title,
     researchQuestions: doc.researchQuestions || doc.analysis?.researchQuestions || [],
+    sourceMaterial: doc.sourceMaterial ? { ...doc.sourceMaterial, text: "" } : undefined,
     sources: doc.sources.map((s) => ({
       id: s.id,
       title: s.title,

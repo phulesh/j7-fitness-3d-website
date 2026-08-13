@@ -68,6 +68,14 @@ export function coverSvg(opts: {
     .map((line, i) => `<tspan x="72" dy="${i === 0 ? 0 : titleSize + 8}">${escapeXml(line)}</tspan>`)
     .join("");
 
+  const subjectMotif = opts.category === "historical"
+    ? `<g transform="translate(470 670)" opacity="0.72"><rect x="0" y="0" width="210" height="185" rx="4" fill="none" stroke="${p.accent}" stroke-width="2"/><rect x="-22" y="22" width="210" height="185" rx="4" fill="none" stroke="${p.muted}"/><path d="M25 48H168M25 75H150M25 102H174M25 129H132" stroke="${p.muted}" stroke-width="3"/><circle cx="24" cy="162" r="7" fill="${p.accent}"/><circle cx="90" cy="162" r="7" fill="${p.accent}"/><circle cx="164" cy="162" r="7" fill="${p.accent}"/><path d="M24 162H164" stroke="${p.accent}" stroke-width="2"/></g>`
+    : opts.category === "legal"
+      ? `<g transform="translate(500 700)" fill="none" stroke="${p.accent}" stroke-width="3" opacity="0.7"><path d="M95 0V180M30 40H160M55 42L20 115H90L55 42ZM135 42L100 115H170L135 42ZM55 115Q55 145 20 115M135 115Q135 145 100 115M45 180H145"/></g>`
+      : opts.category === "scientific"
+        ? `<g transform="translate(570 755)" fill="none" stroke="${p.accent}" opacity="0.65"><ellipse rx="125" ry="42"/><ellipse rx="125" ry="42" transform="rotate(60)"/><ellipse rx="125" ry="42" transform="rotate(120)"/><circle r="14" fill="${p.accent}"/></g>`
+        : "";
+
   const ornament =
     opts.style === "Technical"
       ? `<g opacity="0.18" fill="none" stroke="${p.accent}" stroke-width="1.2">
@@ -82,10 +90,12 @@ export function coverSvg(opts: {
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="1200" viewBox="0 0 800 1200" xml:lang="${opts.language}">
+  ${hindi ? embeddedDevanagariFace() : ""}
   <rect width="800" height="1200" fill="${p.bg}"/>
   <rect x="28" y="28" width="744" height="1144" fill="none" stroke="${p.accent}" stroke-width="2" opacity="0.7"/>
   <rect x="40" y="40" width="720" height="1120" fill="none" stroke="${p.fg}" stroke-width="0.6" opacity="0.25"/>
   ${ornament}
+  ${subjectMotif}
   <text x="72" y="96" fill="${p.accent}" font-family="${coverFont}" font-size="14" letter-spacing="4">${escapeXml(opts.style.toUpperCase())} · FOLIO</text>
   <text x="72" y="280" fill="${p.fg}" font-family="${coverFont}" font-size="${titleSize}" font-weight="600" direction="${dir}">${titleTspans}</text>
   <text x="72" y="${280 + title.length * (titleSize + 8) + 36}" fill="${p.muted}" font-family="${coverFont}" font-size="22">

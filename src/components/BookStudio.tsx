@@ -13,6 +13,7 @@ import { api } from "@/lib/client";
 import { useEbook } from "@/hooks/useEbook";
 import { displayStatus, type EbookDocument, type EbookSettings, type FactFlag, type OutlineItem } from "@/lib/types";
 import { buildBookPages } from "@/lib/book/pages";
+import { groupReferences, sourceCitation } from "@/lib/references";
 import dynamic from "next/dynamic";
 
 const Book3D = dynamic(() => import("./Book3D").then((m) => m.Book3D), {
@@ -127,7 +128,7 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      const suffix = format === "3d" ? "-3D-Ebook.zip" : format === "html" ? "-Interactive-HTML.zip" : `.${format}`;
+      const suffix = format === "3d" ? "-3D-BOOK.zip" : format === "html" ? "-3D-Book.html" : `.${format}`;
       a.download = `${(doc?.title || "ebook").replace(/\s+/g, "-")}${suffix}`;
       a.click();
       URL.revokeObjectURL(url);
@@ -264,21 +265,23 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
           <Link href="/ebooks" className="btn-ghost !py-2">
             Back to library
           </Link>
-          <button className="btn-ghost !py-2" disabled={!!busy} onClick={runFactCheck}>
+          <button className="btn-ghost !py-2" disabled={!!busy || !doc?.chapters?.length} onClick={runFactCheck}>
             {busy === "fact" ? "Checking…" : "Fact Check"}
           </button>
-          <button className="btn-gold !py-2" disabled={!!busy} onClick={() => download("3d")}>
-            📖 Download 3D Ebook
-          </button>
-          <button className="btn-ghost !py-2" disabled={!!busy} onClick={() => download("pdf")}>
-            ⬇ Download PDF
-          </button>
-          <button className="btn-ghost !py-2" disabled={!!busy} onClick={() => download("epub")}>
-            📱 EPUB
-          </button>
-          <button className="btn-ghost !py-2" disabled={!!busy} onClick={() => download("docx")}>
-            📝 DOCX
-          </button>
+          {doc?.status === "complete" && <>
+            <button className="btn-gold !py-2" disabled={!!busy} onClick={() => download("3d")}>
+              ⬇ Download 3D Book
+            </button>
+            <button className="btn-ghost !py-2" disabled={!!busy} onClick={() => download("pdf")}>
+              ⬇ PDF
+            </button>
+            <button className="btn-ghost !py-2" disabled={!!busy} onClick={() => download("epub")}>
+              ⬇ EPUB
+            </button>
+            <button className="btn-ghost !py-2" disabled={!!busy} onClick={() => download("docx")}>
+              ⬇ DOCX
+            </button>
+          </>}
         </div>
       </div>
 
@@ -290,6 +293,7 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
           detail={doc?.progress?.detail}
           percent={doc?.progress?.percent || 10}
           step={doc?.progress?.step}
+          language={doc?.outputLanguage || doc?.language}
         />
       )}
 
@@ -303,7 +307,7 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
               load();
             }}
           >
-            Resume
+            Resume Generation
           </button>
         </div>
       )}
@@ -824,17 +828,21 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
       {doc && tab === "references" && (
         <section className="mt-6 paper-card rounded-2xl p-5">
           <h2 className="font-display text-xl">References</h2>
-          <ol className="mt-4 space-y-3 text-sm">
-            {doc.sources.map((s) => (
-              <li key={s.id}>
-                [{s.id}] {s.title} — {s.organization}
-                {s.publishedAt ? ` (${s.publishedAt.slice(0, 4)})` : ""} —{" "}
-                <a className="underline" href={s.url} target="_blank" rel="noreferrer">
-                  {s.url}
-                </a>
-              </li>
+          <div className="mt-4 space-y-6 text-sm">
+            {groupReferences(doc.sources).map((group) => (
+              <section key={group.key}>
+                <h3 className="font-display text-lg">{doc.outputLanguage === "hi" ? `${group.titleHi} · ${group.title}` : group.title}</h3>
+                <ol className="mt-2 space-y-3">
+                  {group.sources.map((s) => (
+                    <li key={s.id}>
+                      [{s.id}] {sourceCitation(s)}
+                      {/^https?:\/\//.test(s.url) && <> — <a className="underline" href={s.url} target="_blank" rel="noreferrer">{s.url}</a></>}
+                    </li>
+                  ))}
+                </ol>
+              </section>
             ))}
-          </ol>
+          </div>
         </section>
       )}
 
@@ -846,6 +854,7 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
               <div key={g.term}>
                 <dt className="font-semibold">{g.term}</dt>
                 <dd className="text-sm text-ink-400">{g.definition}</dd>
+                {g.context && <dd className="mt-1 text-xs text-ink-300">Context: {g.context}</dd>}
               </div>
             ))}
             {!doc.glossary.length && <p className="text-ink-400">Glossary appears after writing.</p>}
@@ -871,7 +880,21 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
               </div>
             </section>
           )}
-          <Book3D ebookId={ebookId} doc={doc} pages={pages} coverSvg={doc.cover?.svg} />
+          {doc.status === "complete" && pages.length > 0 ? (
+            <Book3D ebookId={ebookId} doc={doc} pages={pages} coverSvg={doc.cover?.svg} />
+          ) : doc.status === "failed" ? (
+            <div className="paper-card rounded-2xl p-6 text-sm text-ink-400">Completed chapters and research are safe. Use <strong>Resume Generation</strong> above to continue from the last successful stage.</div>
+          ) : (
+            <div className="paper-card rounded-2xl p-6 text-center text-sm text-ink-400">Your interactive book will open here automatically after the final quality check.</div>
+          )}
+          {doc.qualityReport && (
+            <details className="paper-card mt-5 rounded-2xl p-5">
+              <summary className="cursor-pointer font-semibold">✓ Final quality report · {doc.qualityReport.items.filter((item) => item.passed).length}/{doc.qualityReport.items.length} checks passed</summary>
+              <ul className="mt-4 grid gap-2 text-sm sm:grid-cols-2">
+                {doc.qualityReport.items.map((item) => <li key={item.key} className={item.passed ? "text-verified" : "text-unsupported"}>{item.passed ? "✓" : "×"} {item.label}{item.repaired ? " · repaired automatically" : ""}</li>)}
+              </ul>
+            </details>
+          )}
         </div>
       )}
 

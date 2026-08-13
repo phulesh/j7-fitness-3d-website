@@ -53,7 +53,7 @@ export async function fetchText(
   opts: { timeoutMs?: number; headers?: Record<string, string>; retries?: number } = {}
 ): Promise<{ ok: boolean; status: number; text: string; finalUrl: string }> {
   const timeoutMs = opts.timeoutMs ?? 7000;
-  const retries = opts.retries ?? 0;
+  const retries = opts.retries ?? 2;
   let lastErr: Error | null = null;
   for (let i = 0; i <= retries; i++) {
     const ctrl = new AbortController();
@@ -75,7 +75,7 @@ export async function fetchText(
       lastErr = e as Error;
       const viaCurl = await curlGet(url, timeoutMs, opts.headers);
       if (viaCurl.status !== 0) return viaCurl;
-      await sleep(300 * (i + 1));
+      await sleep(350 * 2 ** i + Math.floor(Math.random() * 180));
     } finally {
       clearTimeout(t);
     }

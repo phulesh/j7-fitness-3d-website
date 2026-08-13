@@ -13,8 +13,18 @@ export async function GET(req: Request, { params }: { params: { id: string; name
   const file = path.join(process.cwd(), "data", "images", ebook.id, safe);
   if (!fs.existsSync(file)) return bad("Image not found", 404);
   const buf = fs.readFileSync(file);
-  const type = safe.endsWith(".svg") ? "image/svg+xml" : safe.endsWith(".png") ? "image/png" : "image/jpeg";
+  const ext = path.extname(safe).toLowerCase();
+  const types: Record<string, string> = {
+    ".svg": "image/svg+xml; charset=utf-8",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+    ".gif": "image/gif",
+  };
+  const type = types[ext];
+  if (!type) return bad("Unsupported image type", 415);
   return new Response(buf, {
-    headers: { "Content-Type": type, "Cache-Control": "private, max-age=3600" },
+    headers: { "Content-Type": type, "X-Content-Type-Options": "nosniff", "Cache-Control": "private, max-age=3600" },
   });
 }

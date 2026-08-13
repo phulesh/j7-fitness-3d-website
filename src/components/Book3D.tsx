@@ -74,9 +74,8 @@ function pageTexture(page: BookPage, coverSvg?: string): THREE.CanvasTexture {
   const figures = page.kind !== "cover" ? srcs.slice(0, 3) : [];
   // Reserve a band at the bottom of the page for real figure images so the
   // body text never overlaps them.
-  const figureBand = figures.length ? 520 : 0;
   const figTop = 540;
-  const textBottom = h - 60 - figureBand;
+  const figBottom = h - 90;
 
   ctx.fillStyle = "#FBF6EC";
   ctx.fillRect(0, 0, w, h);
@@ -93,21 +92,21 @@ function pageTexture(page: BookPage, coverSvg?: string): THREE.CanvasTexture {
     ctx.lineWidth = 3;
     ctx.strokeRect(36, 36, w - 72, h - 72);
     ctx.fillStyle = "#D4BC6E";
-    ctx.font = "20px Georgia, 'Noto Sans Devanagari', serif";
+    ctx.font = "20px 'Noto Sans Devanagari', Georgia, serif";
     ctx.fillText("FOLIO  ·  RESEARCH", 72, 120);
     ctx.fillStyle = "#F6F0E6";
-    ctx.font = "bold 48px Georgia, 'Noto Sans Devanagari', serif";
+    ctx.font = "bold 48px 'Noto Sans Devanagari', Georgia, serif";
     wrapLines(ctx, page.title, 72, 280, w - 144, 58, 5);
     const subtitle = stripHtml(page.html).slice(page.title.length).trim();
     ctx.fillStyle = "#C4B09A";
-    ctx.font = "22px Georgia, 'Noto Sans Devanagari', serif";
+    ctx.font = "22px 'Noto Sans Devanagari', Georgia, serif";
     wrapLines(ctx, subtitle, 72, 620, w - 144, 32, 6);
   } else {
     ctx.fillStyle = "#9A7B2F";
     ctx.font = "16px Figtree, system-ui, sans-serif";
     ctx.fillText(page.kind.toUpperCase(), 64, 80);
     ctx.fillStyle = "#1C1410";
-    ctx.font = "bold 32px Georgia, 'Noto Sans Devanagari', serif";
+    ctx.font = "bold 32px 'Noto Sans Devanagari', Georgia, serif";
     wrapLines(ctx, page.title, 64, 130, w - 128, 40, 3);
     const body = stripHtml(page.html);
     ctx.font = "22px 'Noto Sans Devanagari', Georgia, serif";
@@ -138,7 +137,7 @@ function pageTexture(page: BookPage, coverSvg?: string): THREE.CanvasTexture {
     };
     img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(coverSvg)}`;
   } else if (figures.length) {
-    const slotH = (textBottom - figTop) / figures.length;
+    const slotH = (figBottom - figTop) / figures.length;
     figures.forEach((src, i) => {
       const img = new Image();
       img.onload = () => {
@@ -161,18 +160,25 @@ function BookMesh({
   leaf,
   turning,
   coverSvg,
+  fontVersion,
 }: {
   pages: BookPage[];
   leaf: number;
   turning: number;
   coverSvg?: string;
+  fontVersion: number;
 }) {
   const left = pages[Math.max(0, leaf)] || pages[0];
   const right = pages[Math.min(pages.length - 1, leaf + 1)] || left;
   const flip = pages[Math.min(pages.length - 1, leaf + 1)];
-  const leftTex = useMemo(() => pageTexture(left, coverSvg), [left, coverSvg]);
-  const rightTex = useMemo(() => pageTexture(right, coverSvg), [right, coverSvg]);
-  const flipTex = useMemo(() => pageTexture(flip || right, coverSvg), [flip, right, coverSvg]);
+  const leftTex = useMemo(() => { void fontVersion; return pageTexture(left, coverSvg); }, [left, coverSvg, fontVersion]);
+  const rightTex = useMemo(() => { void fontVersion; return pageTexture(right, coverSvg); }, [right, coverSvg, fontVersion]);
+  const flipTex = useMemo(() => { void fontVersion; return pageTexture(flip || right, coverSvg); }, [flip, right, coverSvg, fontVersion]);
+  useEffect(() => () => {
+    leftTex.dispose();
+    rightTex.dispose();
+    flipTex.dispose();
+  }, [leftTex, rightTex, flipTex]);
   const group = useRef<THREE.Group>(null);
 
   useFrame((_, dt) => {
@@ -184,27 +190,44 @@ function BookMesh({
   const thickness = Math.min(0.28, 0.06 + pages.length * 0.004);
 
   return (
-    <group ref={group} rotation={[0.08, 0.18, 0]} position={[0, 0.05, 0]}>
-      <mesh position={[-0.62, 0, 0]} castShadow>
-        <boxGeometry args={[0.08, 1.86, thickness + 0.04]} />
-        <meshStandardMaterial color="#3B241C" roughness={0.55} metalness={0.08} />
+    <group ref={group} rotation={[0.08, 0.08, 0]} position={[0, 0.05, 0]}>
+      {/* Hardcover boards, a rounded-looking spine, and visible paper blocks. */}
+      <mesh position={[-0.63, 0, -thickness / 2 - 0.035]} castShadow receiveShadow>
+        <boxGeometry args={[1.26, 1.9, 0.055]} />
+        <meshStandardMaterial color="#321820" roughness={0.48} metalness={0.06} />
       </mesh>
-      <mesh position={[0, 0, -thickness / 2 - 0.01]} castShadow>
-        <boxGeometry args={[1.22, 1.84, 0.02]} />
-        <meshStandardMaterial color="#2A1C16" roughness={0.5} />
+      <mesh position={[0.63, 0, -thickness / 2 - 0.035]} castShadow receiveShadow>
+        <boxGeometry args={[1.26, 1.9, 0.055]} />
+        <meshStandardMaterial color="#321820" roughness={0.48} metalness={0.06} />
       </mesh>
-      <mesh position={[-0.02, 0, 0.01]} rotation={[0, 0, 0]}>
+      <mesh position={[0, 0, -thickness / 2]} castShadow>
+        <capsuleGeometry args={[0.055, 1.76, 8, 16]} />
+        <meshStandardMaterial color="#6F2738" roughness={0.5} metalness={0.08} />
+      </mesh>
+      <mesh position={[-0.59, 0, -thickness / 2 + 0.012]} castShadow>
+        <boxGeometry args={[1.16, 1.78, thickness]} />
+        <meshStandardMaterial color="#E7DDCB" roughness={0.92} />
+      </mesh>
+      <mesh position={[0.59, 0, -thickness / 2 + 0.012]} castShadow>
+        <boxGeometry args={[1.16, 1.78, thickness]} />
+        <meshStandardMaterial color="#E7DDCB" roughness={0.92} />
+      </mesh>
+      <mesh position={[-0.59, 0, thickness / 2 + 0.018]} receiveShadow>
         <planeGeometry args={[1.16, 1.76]} />
-        <meshStandardMaterial map={leftTex} roughness={0.85} />
+        <meshStandardMaterial map={leftTex} roughness={0.86} side={THREE.DoubleSide} />
       </mesh>
-      <mesh position={[0.02, 0, 0.012]} rotation={[0, -angle, 0]}>
+      <mesh position={[0.59, 0, thickness / 2 + 0.019]} receiveShadow>
         <planeGeometry args={[1.16, 1.76]} />
-        <meshStandardMaterial map={turning > 0.02 ? flipTex : rightTex} roughness={0.85} />
+        <meshStandardMaterial map={rightTex} roughness={0.86} side={THREE.DoubleSide} />
       </mesh>
-      <mesh position={[0, 0, thickness / 2 + 0.015]} rotation={[0, Math.PI, 0]} castShadow>
-        <planeGeometry args={[1.22, 1.84]} />
-        <meshStandardMaterial color="#7A2E3A" roughness={0.45} />
-      </mesh>
+      {turning > 0 && (
+        <group position={[0, 0, thickness / 2 + 0.035]} rotation={[0, angle, 0]}>
+          <mesh position={[0.59, 0, 0]} castShadow>
+            <planeGeometry args={[1.16, 1.76, 18, 1]} />
+            <meshStandardMaterial map={flipTex} roughness={0.78} side={THREE.DoubleSide} />
+          </mesh>
+        </group>
+      )}
     </group>
   );
 }
@@ -229,12 +252,23 @@ export function Book3D({
   const [toc, setToc] = useState(false);
   const [query, setQuery] = useState("");
   const [bookmarks, setBookmarks] = useState<number[]>([]);
+  const [fontVersion, setFontVersion] = useState(0);
   const host = useRef<HTMLDivElement>(null);
   const touchX = useRef<number | null>(null);
+  const pointerX = useRef<number | null>(null);
 
   useEffect(() => {
     setWebgl(hasWebGL());
-  }, []);
+    try {
+      const saved = localStorage.getItem(`folio:bookmarks:${ebookId}`);
+      if (saved) setBookmarks(JSON.parse(saved));
+    } catch {}
+    document.fonts?.load("22px 'Noto Sans Devanagari'", "अछूत अस्पृश्यता संविधान").then(() => setFontVersion(1)).catch(() => {});
+  }, [ebookId]);
+
+  useEffect(() => {
+    try { localStorage.setItem(`folio:bookmarks:${ebookId}`, JSON.stringify(bookmarks)); } catch {}
+  }, [bookmarks, ebookId]);
 
   useEffect(() => {
     if (!full || !host.current) return;
@@ -268,6 +302,7 @@ export function Book3D({
     return (
       <div>
         <Toolbar
+          ebookId={ebookId}
           leaf={leaf}
           total={pages.length}
           zoom={zoom}
@@ -289,6 +324,7 @@ export function Book3D({
   return (
     <div ref={host} className={`relative ${full ? "fixed inset-0 z-50 bg-[#1C1410]" : ""}`}>
       <Toolbar
+        ebookId={ebookId}
         leaf={leaf}
         total={pages.length}
         zoom={zoom}
@@ -336,6 +372,14 @@ export function Book3D({
           if (dx > 40) turn(-1);
           touchX.current = null;
         }}
+        onPointerDown={(e) => { pointerX.current = e.clientX; }}
+        onPointerUp={(e) => {
+          if (pointerX.current == null) return;
+          const dx = e.clientX - pointerX.current;
+          if (dx < -70) turn(1);
+          if (dx > 70) turn(-1);
+          pointerX.current = null;
+        }}
       >
         <Canvas
           shadows={!lowMem}
@@ -348,7 +392,7 @@ export function Book3D({
           <directionalLight position={[3, 4, 5]} intensity={1.15} castShadow />
           <directionalLight position={[-3, 2, 2]} intensity={0.35} color="#E0C56E" />
           <Suspense fallback={null}>
-            <BookMesh pages={pages} leaf={leaf} turning={turning} coverSvg={coverSvg} />
+            <BookMesh pages={pages} leaf={leaf} turning={turning} coverSvg={coverSvg} fontVersion={fontVersion} />
             {!lowMem && <ContactShadows position={[0, -1.05, 0]} opacity={0.35} scale={8} blur={2.4} />}
           </Suspense>
           <OrbitControls enablePan={false} minDistance={1.6} maxDistance={5.4} maxPolarAngle={Math.PI / 1.7} />
@@ -356,6 +400,11 @@ export function Book3D({
       </div>
       <p className="sr-only">3D book for ebook {ebookId}</p>
       <PageFigures pages={pages} leaf={leaf} />
+      <div className="sticky bottom-3 z-10 mx-auto mt-3 flex w-fit items-center gap-2 rounded-full border border-paper-300 bg-paper-50/95 p-2 shadow-soft backdrop-blur">
+        <button className="btn-ghost min-h-[44px] !py-2" onClick={() => turn(-1)} disabled={leaf === 0}>Previous</button>
+        <span className="min-w-24 text-center text-sm">Page {Math.min(pages.length, leaf + 1)} / {pages.length}</span>
+        <button className="btn-ghost min-h-[44px] !py-2" onClick={() => turn(1)} disabled={leaf >= pages.length - 2}>Next</button>
+      </div>
     </div>
   );
 }
@@ -376,6 +425,7 @@ function PageFigures({ pages, leaf }: { pages: BookPage[]; leaf: number }) {
 }
 
 function Toolbar({
+  ebookId,
   leaf,
   total,
   zoom,
@@ -389,6 +439,7 @@ function Toolbar({
   onToc,
   webgl,
 }: {
+  ebookId: string;
   leaf: number;
   total: number;
   zoom: number;
@@ -403,7 +454,8 @@ function Toolbar({
   webgl: boolean;
 }) {
   return (
-    <div className="mb-3 flex flex-wrap items-center gap-2">
+    <div className="mb-3 flex flex-wrap items-center gap-2" role="toolbar" aria-label="3D book controls">
+      <a className="btn-ghost !py-2 min-h-[44px]" href="/ebooks">← Library</a>
       <button className="btn-ghost !py-2 min-h-[44px]" onClick={onPrev} aria-label="Previous">
         <ChevronLeft className="h-4 w-4" /> Previous
       </button>
@@ -431,6 +483,17 @@ function Toolbar({
       <button className="btn-ghost !py-2" onClick={() => setMode("read")}>
         <BookOpen className="h-4 w-4" /> Reading View
       </button>
+      <details className="relative">
+        <summary className="btn-ghost !py-2 cursor-pointer list-none">⬇ Download</summary>
+        <div className="absolute right-0 z-20 mt-2 grid min-w-52 gap-1 rounded-xl border border-paper-300 bg-paper-50 p-2 shadow-soft">
+          <a className="rounded-lg px-3 py-2 text-sm hover:bg-paper-200" href={`/api/ebooks/${ebookId}/export?format=3d`}>3D Book ZIP</a>
+          <a className="rounded-lg px-3 py-2 text-sm hover:bg-paper-200" href={`/api/ebooks/${ebookId}/export?format=html`}>3D HTML</a>
+          <a className="rounded-lg px-3 py-2 text-sm hover:bg-paper-200" href={`/api/ebooks/${ebookId}/export?format=pdf`}>PDF</a>
+          <a className="rounded-lg px-3 py-2 text-sm hover:bg-paper-200" href={`/api/ebooks/${ebookId}/export?format=epub`}>EPUB</a>
+          <a className="rounded-lg px-3 py-2 text-sm hover:bg-paper-200" href={`/api/ebooks/${ebookId}/export?format=docx`}>DOCX</a>
+        </div>
+      </details>
+      <button className="btn-ghost !py-2" onClick={() => setMode(mode === "3d" ? "read" : "3d")}>⚙ Settings</button>
     </div>
   );
 }

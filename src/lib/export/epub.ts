@@ -4,6 +4,7 @@ import JSZip from "jszip";
 import type { EbookDocument } from "../types";
 import { labelsFor } from "../generate/write";
 import { isRtl } from "../language";
+import { groupReferences, sourceCitation } from "../references";
 
 export async function exportEpub(doc: EbookDocument, destPath: string): Promise<string> {
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
@@ -25,6 +26,36 @@ export async function exportEpub(doc: EbookDocument, destPath: string): Promise<
   const oebps = zip.folder("OEBPS")!;
   oebps.file("styles.css", CSS);
 
+  const fontName = "NotoSansDevanagari-Regular.ttf";
+  const fontPath = path.join(process.cwd(), "public", "fonts", fontName);
+  const hasFont = fs.existsSync(fontPath);
+  if (hasFont) oebps.file(`fonts/${fontName}`, fs.readFileSync(fontPath));
+
+  // Resolve and validate assets before XHTML is written. EPUB must never keep
+  // authenticated /api URLs: every image is either embedded and rewritten to
+  // a package-relative path, or its entire broken figure is removed.
+  const imageMap = new Map<string, string>();
+  doc.chapters.forEach((ch, ci) => {
+    (ch.images || []).forEach((img, ii) => {
+      const src = img.localPath && fs.existsSync(img.localPath) ? img.localPath : "";
+      const png = src.endsWith(".svg") ? src.replace(/\.svg$/i, ".png") : src;
+      const file = png && fs.existsSync(png) ? png : src && fs.existsSync(src) ? src : "";
+      if (!file) return;
+      const ext = path.extname(file).toLowerCase() || ".png";
+      const name = `images/ch${ci + 1}-${ii + 1}${ext}`;
+      oebps.file(name, fs.readFileSync(file));
+      if (img.url) imageMap.set(img.url, name);
+      imageMap.set(`/api/ebooks/${doc.id}/images/${path.basename(file)}`, name);
+      if (src) imageMap.set(`/api/ebooks/${doc.id}/images/${path.basename(src)}`, name);
+    });
+  });
+
+  let coverHref = "";
+  if (doc.cover?.pngPath && fs.existsSync(doc.cover.pngPath)) {
+    coverHref = "images/cover.png";
+    oebps.file(coverHref, fs.readFileSync(doc.cover.pngPath));
+  }
+
   const chaptersXhtml: { id: string; href: string; title: string; html: string }[] = [];
 
   if (doc.settings.includeCover) {
@@ -35,6 +66,7 @@ export async function exportEpub(doc: EbookDocument, destPath: string): Promise<
       html: wrap(
         "Cover",
         `<div class="cover">
+          ${coverHref ? `<img class="cover-art" src="${coverHref}" alt="${esc(doc.title)}"/>` : ""}
           <p class="kicker">FOLIO</p>
           <h1>${esc(doc.title)}</h1>
           <p class="sub">${esc(doc.subtitle)}</p>
@@ -46,8 +78,25 @@ export async function exportEpub(doc: EbookDocument, destPath: string): Promise<
     });
   }
 
+  const publicationTitle = (doc.outputLanguage || doc.language) === "hi" ? "प्रकाशन सूचना" : "Publication Information";
+  chaptersXhtml.push({
+    id: "publication",
+    href: "publication.xhtml",
+    title: publicationTitle,
+    html: wrap(publicationTitle, `<h1>${esc(publicationTitle)}</h1><p>© ${new Date(doc.createdAt).getFullYear()} ${esc(doc.settings.authorName || "Folio Research")}</p><p>${esc((doc.outputLanguage || doc.language) === "hi" ? "शोध-आधारित पुस्तक · स्रोत उद्धृत" : "Research-based book · Sources cited")}</p>`, rtl, doc.language),
+  });
+  const prefaceTitle = (doc.outputLanguage || doc.language) === "hi" ? "प्राक्कथन" : "Preface";
+  chaptersXhtml.push({
+    id: "preface",
+    href: "preface.xhtml",
+    title: prefaceTitle,
+    html: wrap(prefaceTitle, `<h1>${esc(prefaceTitle)}</h1><p>${esc((doc.outputLanguage || doc.language) === "hi" ? "यह पुस्तक विश्वसनीय स्रोतों, स्पष्ट उद्धरणों और तथ्य तथा व्याख्या के भेद के साथ तैयार की गई है।" : "This book was prepared with reliable sources, traceable citations, and a clear distinction between evidence and interpretation.")}</p>`, rtl, doc.language),
+  });
+
   if (doc.settings.includeToc) {
     const items = [
+      `<li><a href="publication.xhtml">${esc(publicationTitle)}</a></li>`,
+      `<li><a href="preface.xhtml">${esc(prefaceTitle)}</a></li>`,
       `<li><a href="intro.xhtml">${esc(labels.introduction)}</a></li>`,
       ...doc.chapters.map((c, i) => `<li><a href="chapter-${i + 1}.xhtml">${esc(c.title)}</a></li>`),
       `<li><a href="conclusion.xhtml">${esc(labels.conclusion)}</a></li>`,
@@ -77,8 +126,9 @@ export async function exportEpub(doc: EbookDocument, destPath: string): Promise<
         ? `<h2>${esc(labels.objectives)}</h2><ul>${ch.learningObjectives.map((o) => `<li>${esc(o)}</li>`).join("")}</ul>`
         : "",
       ...ch.sections.map((s) => `<h2>${esc(s.heading)}</h2>${s.html}`),
-      ...(ch.images || []).length
-        ? ch.images
+      !ch.sections.some((s) => /class=["']ebook-figure/.test(s.html))
+        ? (ch.images || [])
+            .filter((img) => imageMap.has(img.url))
             .map(
               (img) =>
                 `<figure class="ebook-figure"><img src="${esc(img.url)}" alt="${esc(img.alt)}"/><figcaption><strong>${esc(
@@ -132,7 +182,7 @@ export async function exportEpub(doc: EbookDocument, destPath: string): Promise<
       html: wrap(
         labels.glossary,
         `<h1>${esc(labels.glossary)}</h1><dl>${doc.glossary
-          .map((g) => `<dt>${esc(g.term)}</dt><dd>${esc(g.definition)}</dd>`)
+          .map((g) => `<dt>${esc(g.term)}</dt><dd>${esc(g.definition)}${g.context ? `<br/><small>${esc(g.context)}</small>` : ""}</dd>`)
           .join("")}</dl>`,
         rtl,
         doc.language
@@ -140,11 +190,8 @@ export async function exportEpub(doc: EbookDocument, destPath: string): Promise<
     });
   }
 
-  const refs = doc.sources
-    .map(
-      (s) =>
-        `<p id="ref-${s.id}">[${s.id}] ${esc(s.title)} — ${esc(s.organization)} — <a href="${esc(s.url)}">${esc(s.url)}</a></p>`
-    )
+  const refs = groupReferences(doc.sources)
+    .map((group) => `<section><h2>${esc((doc.outputLanguage || doc.language) === "hi" ? `${group.titleHi} · ${group.title}` : group.title)}</h2>${group.sources.map((s) => `<p id="ref-${s.id}">[${s.id}] ${esc(sourceCitation(s))}${/^https?:\/\//.test(s.url) ? ` — <a href="${esc(s.url)}">${esc(s.url)}</a>` : ""}</p>`).join("\n")}</section>`)
     .join("\n");
   chaptersXhtml.push({
     id: "references",
@@ -153,25 +200,13 @@ export async function exportEpub(doc: EbookDocument, destPath: string): Promise<
     html: wrap(labels.references, `<h1>${esc(labels.references)}</h1>${refs}`, rtl, doc.language),
   });
 
-  const imageMap = new Map<string, string>();
-  doc.chapters.forEach((ch, ci) => {
-    (ch.images || []).forEach((img, ii) => {
-      const src = img.localPath && fs.existsSync(img.localPath) ? img.localPath : "";
-      const png = src.endsWith(".svg") ? src.replace(/\.svg$/i, ".png") : src;
-      const file = png && fs.existsSync(png) ? png : src && fs.existsSync(src) ? src : "";
-      if (!file) return;
-      const ext = path.extname(file) || ".png";
-      const name = `images/ch${ci + 1}-${ii + 1}${ext}`;
-      oebps.file(name, fs.readFileSync(file));
-      if (img.url) imageMap.set(img.url, name);
-      imageMap.set(`/api/ebooks/${doc.id}/images/${path.basename(file)}`, name);
-    });
-  });
   for (const c of chaptersXhtml) {
     let html = c.html;
-    for (const [from, to] of imageMap) {
-      html = html.split(from).join(to);
-    }
+    for (const [from, to] of imageMap) html = html.split(from).join(to);
+    // Older ebook records can contain a stale authenticated image URL. It is
+    // safer to remove that complete figure than to ship an empty rectangle.
+    html = html.replace(/<figure\b[^>]*>[\s\S]*?<img\b[^>]*src=["']\/api\/ebooks\/[^"']+["'][^>]*>[\s\S]*?<\/figure>/gi, "");
+    html = html.replace(/<img\b[^>]*src=["']\/api\/ebooks\/[^"']+["'][^>]*\/?\s*>/gi, "");
     oebps.file(c.href, html);
   }
 
@@ -181,6 +216,8 @@ export async function exportEpub(doc: EbookDocument, destPath: string): Promise<
   });
   const manifest = [
     `<item id="css" href="styles.css" media-type="text/css"/>`,
+    ...(hasFont ? [`<item id="devanagari-font" href="fonts/${fontName}" media-type="font/ttf"/>`] : []),
+    ...(coverHref ? [`<item id="cover-image" href="${coverHref}" media-type="image/png" properties="cover-image"/>`] : []),
     `<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>`,
     ...chaptersXhtml
       .filter((c) => c.id !== "nav")
@@ -238,7 +275,9 @@ function esc(s: string) {
 }
 
 const CSS = `
-body { font-family: "Source Serif 4", "Noto Serif", "Noto Sans Devanagari", Georgia, serif; line-height: 1.55; color: #1c1410; margin: 1.2em; }
+@font-face { font-family: "Noto Sans Devanagari"; src: url("fonts/NotoSansDevanagari-Regular.ttf") format("truetype"); font-weight: 400; font-style: normal; }
+body { font-family: "Noto Sans Devanagari", "Source Serif 4", "Noto Serif", Georgia, serif; line-height: 1.7; color: #1c1410; margin: 1.2em; }
+.cover-art { display: block; max-height: 58vh; max-width: 100%; margin: 0 auto 1em; object-fit: contain; }
 h1 { font-size: 1.7em; margin-bottom: .4em; }
 h2 { font-size: 1.2em; margin-top: 1.2em; }
 .kicker { letter-spacing: .18em; text-transform: uppercase; color: #9a7b2f; font-size: .78em; }

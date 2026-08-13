@@ -28,6 +28,7 @@ export function figuresToHtml(images: ChapterImage[], lang: string): string {
   <img src="${escapeHtml(img.url)}" alt="${escapeHtml(img.alt || img.caption)}" loading="lazy" />
   <figcaption>
     <strong>${escapeHtml(img.figureLabel || img.caption)}</strong>
+    <span class="figure-title">${escapeHtml(img.caption)}</span>
     <span class="figure-credit">${creditLabel}: ${escapeHtml(img.credit)}</span>
     ${note}
   </figcaption>
@@ -50,9 +51,24 @@ export function insertFiguresIntoChapter(ch: Chapter, lang: string): Chapter {
   return ch;
 }
 
+let devanagariFontData = "";
+function embeddedFigureFont(): string {
+  if (devanagariFontData) return devanagariFontData;
+  try {
+    const fontPath = path.join(process.cwd(), "public", "fonts", "NotoSansDevanagari-Regular.ttf");
+    if (!fs.existsSync(fontPath)) return "";
+    const b64 = fs.readFileSync(fontPath).toString("base64");
+    devanagariFontData = `<defs><style><![CDATA[@font-face{font-family:'Noto Sans Devanagari';src:url('data:font/ttf;base64,${b64}') format('truetype');font-weight:400;}text{font-family:'Noto Sans Devanagari',sans-serif;}]]></style></defs>`;
+    return devanagariFontData;
+  } catch {
+    return "";
+  }
+}
+
 function svgWrap(inner: string, title: string): string {
   return `<?xml version="1.0" encoding="UTF-8"?>
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720">
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" xml:lang="hi">
+  ${embeddedFigureFont()}
   <rect width="1200" height="720" fill="#F6F0E6"/>
   <rect x="24" y="24" width="1152" height="672" fill="none" stroke="#9A7B2F" stroke-width="2"/>
   <text x="48" y="64" fill="#7A2E3A" font-family="'Noto Sans Devanagari', Georgia, serif" font-size="22">${escapeXml(title)}</text>
@@ -86,9 +102,17 @@ export function makeIllustrationSvg(
     return svgWrap(`<line x1="80" y1="340" x2="1120" y2="340" stroke="#9A7B2F" stroke-width="4"/>${inner}`, title);
   }
   if (kind === "map") {
+    const labels = (lines.length ? lines : [title]).slice(0, 4);
     return svgWrap(
-      `<rect x="180" y="140" width="840" height="460" rx="20" fill="#E8DCC8" stroke="#5C4B3C"/>
-       <text x="600" y="380" text-anchor="middle" fill="#1C1410" font-family="'Noto Sans Devanagari', Georgia, serif" font-size="28">${escapeXml(lines[0] || title)}</text>`,
+      `<path d="M470 130 L610 150 690 225 660 300 735 370 650 455 620 590 535 545 505 445 430 390 455 305 405 235Z" fill="#E8DCC8" stroke="#5C4B3C" stroke-width="3"/>
+       <path d="M475 245 Q565 295 662 258 M450 365 Q560 330 700 385 M515 445 Q585 395 650 470" fill="none" stroke="#9A7B2F" stroke-width="2" stroke-dasharray="8 7"/>
+       ${labels.map((label, i) => {
+         const positions = [[330, 210], [820, 250], [300, 470], [820, 500]][i];
+         const anchorX = i % 2 ? 670 : 465;
+         const anchorY = [235, 275, 395, 460][i];
+         return `<line x1="${anchorX}" y1="${anchorY}" x2="${positions[0]}" y2="${positions[1]}" stroke="#7A2E3A"/><circle cx="${anchorX}" cy="${anchorY}" r="7" fill="#7A2E3A"/><text x="${positions[0]}" y="${positions[1]}" text-anchor="middle" fill="#1C1410" font-size="17">${escapeXml(label.slice(0, 34))}</text>`;
+       }).join("")}
+       <text x="600" y="630" text-anchor="middle" fill="#5C4B3C" font-size="15">वैचारिक भू-संदर्भ · मापानुसार भौगोलिक मानचित्र नहीं</text>`,
       title
     );
   }
@@ -132,8 +156,11 @@ export async function persistIllustration(
   try {
     const sharp = (await import("sharp")).default;
     pngPath = path.join(dir, `${basename}.png`);
-    await sharp(Buffer.from(svg)).png().resize(1200, 720).toFile(pngPath);
+    await sharp(Buffer.from(svg)).png({ compressionLevel: 9 }).resize(1200, 720).toFile(pngPath);
+    const meta = await sharp(pngPath).metadata();
+    if (meta.format !== "png" || meta.width !== 1200 || meta.height !== 720) throw new Error("Rendered figure failed validation");
   } catch {
+    if (pngPath && fs.existsSync(pngPath)) fs.rmSync(pngPath, { force: true });
     pngPath = "";
   }
   const localPath = pngPath || svgPath;
@@ -229,7 +256,12 @@ function suggestVisuals(item: OutlineItem): ChapterImageType[] {
 }
 
 function visualLines(item: OutlineItem, kind: ChapterImageType, hindi: boolean): string[] {
-  if (kind === "timeline") return hindi ? ["1948 पुस्तक", "1950 संविधान", "अनुच्छेद 17"] : ["1948 book", "1950 Constitution", "Article 17"];
+  if (kind === "timeline") {
+    const years = `${item.historicalScope || ""} ${item.summary || ""}`.match(/\b(?:1[5-9]\d{2}|20\d{2})\b/g) || [];
+    const topics = (item.keyTopics || []).filter((topic) => /\d|संविधान|पुस्तक|article|constitution|book/i.test(topic));
+    const specific = [...new Set([...years, ...topics])].slice(0, 5);
+    return specific.length >= 2 ? specific : hindi ? ["1948 — पुस्तक", "1950 — संविधान", "अनुच्छेद 17"] : ["1948 — book", "1950 — Constitution", "Article 17"];
+  }
   if (kind === "comparison") {
     return hindi
       ? ["स्थापित साक्ष्य", "आंबेडकर की व्याख्या", item.historicalScope || "", item.researchQuestion || ""]
