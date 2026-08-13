@@ -1,0 +1,150 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --paper: #f3ede3;
+  --ink: #1c1410;
+  --gold: #9a7b2f;
+  color-scheme: light;
+}
+
+html,
+body {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+body {
+  background-image:
+    radial-gradient(1200px 600px at 10% -10%, rgba(154, 123, 47, 0.08), transparent 50%),
+    radial-gradient(900px 500px at 100% 0%, rgba(122, 46, 58, 0.05), transparent 45%),
+    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.035'/%3E%3C/svg%3E");
+  min-height: 100vh;
+}
+
+::selection {
+  background: #e0c56e;
+  color: #1c1410;
+}
+
+.font-display {
+  font-feature-settings: "soft" 50, "wonk" 1;
+}
+
+.paper-card {
+  background: #fff9f0;
+  border: 1px solid #e0d5c5;
+  box-shadow: 0 12px 40px rgba(28, 20, 16, 0.06);
+}
+
+.rule {
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #d4c4a8, transparent);
+}
+
+.stamp {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1.5px solid currentColor;
+  padding: 0.15rem 0.55rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+.prose-ebook {
+  font-family: var(--font-serif), Georgia, serif;
+  font-size: 1.0625rem;
+  line-height: 1.7;
+  color: #2a1f18;
+}
+.prose-ebook h1,
+.prose-ebook h2,
+.prose-ebook h3,
+.prose-ebook h4 {
+  font-family: var(--font-display), Georgia, serif;
+  color: #1c1410;
+  line-height: 1.25;
+  margin: 1.4em 0 0.5em;
+}
+.prose-ebook p {
+  margin: 0.85em 0;
+}
+.prose-ebook ul,
+.prose-ebook ol {
+  margin: 0.7em 0 0.7em 1.2em;
+}
+.prose-ebook li {
+  margin: 0.25em 0;
+}
+.prose-ebook a {
+  color: #5c212b;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.prose-ebook .cite,
+.prose-ebook sup.cite {
+  color: #9a7b2f;
+  font-size: 0.75em;
+  font-family: var(--font-sans), system-ui, sans-serif;
+}
+.prose-ebook code {
+  font-size: 0.9em;
+  background: #f3ede3;
+  padding: 0.1em 0.35em;
+}
+
+input,
+textarea,
+select,
+button {
+  font: inherit;
+}
+
+.btn {
+  @apply inline-flex items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold transition active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none;
+}
+.btn-gold {
+  @apply btn bg-ink-700 text-paper-100 hover:bg-ink-600 shadow-stamp;
+}
+.btn-ghost {
+  @apply btn border border-paper-400/80 bg-transparent text-ink-700 hover:bg-paper-100;
+}
+.btn-line {
+  @apply btn border border-ink-700 text-ink-700 hover:bg-ink-700 hover:text-paper-100;
+}
+
+.field {
+  @apply w-full rounded-xl border border-paper-400 bg-paper-50 px-3.5 py-2.5 text-ink-700 outline-none focus:border-gold-400 focus:ring-2 focus:ring-gold-200;
+}
+
+.book-shadow {
+  box-shadow:
+    8px 12px 30px rgba(28, 20, 16, 0.18),
+    1px 0 0 rgba(255, 255, 255, 0.4) inset,
+    12px 0 20px rgba(28, 20, 16, 0.08);
+}
+
+@keyframes spine {
+  from { transform: rotateY(12deg) translateY(8px); opacity: 0; }
+  to { transform: rotateY(-8deg) translateY(0); opacity: 1; }
+}
+
+.drop-cap::first-letter {
+  font-family: var(--font-display), Georgia, serif;
+  float: left;
+  font-size: 3.4rem;
+  line-height: 0.8;
+  padding-right: 0.45rem;
+  padding-top: 0.2rem;
+  color: #7a2e3a;
+}
+
+@media (max-width: 640px) {
+  .drop-cap::first-letter {
+    font-size: 2.4rem;
+  }
+}
