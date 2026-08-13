@@ -1,14 +1,49 @@
 import path from "path";
 import { analyzeTopic, detectVagueness } from "./analyze";
-import { buildOutlineFromResearch, runResearch } from "../research/pipeline";
+import { buildOutlineFromResearch, runResearch, researchOutlineChapters } from "../research/pipeline";
 import { writeChapter, writeFrontMatter, countWords, flagsFromFacts, maybeChapterImages, chapterPlain } from "./write";
 import { buildChapterVisuals, insertFiguresIntoChapter } from "./images";
-import { coverSvg, renderCoverPng } from "./cover";
+import { coverAuthor, coverSvg, renderCoverPng } from "./cover";
 import { getEbook, updateEbook, saveChapter, updateJob } from "../ebooks";
-import type { Chapter, EbookDocument, OutlineItem } from "../types";
+import type { Chapter, EbookDocument, OutlineItem, ResearchRunState } from "../types";
 import { isHindiOutput } from "../language";
 import { documentNeedsHindiRegen, ensureHindiChapter, localizeOutline } from "./hindi";
 import { friendlyError } from "../errors";
+
+const RESEARCH_TIMEOUT_MS = Number(process.env.RESEARCH_TIMEOUT_MS || 7 * 60 * 1000);
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (v) => {
+        clearTimeout(t);
+        resolve(v);
+      },
+      (e) => {
+        clearTimeout(t);
+        reject(e);
+      }
+    );
+  });
+}
+
+function researchCopy(hindi: boolean) {
+  return {
+    started: hindi ? "शोध शुरू हो रहा है…" : "Research started…",
+    analyzing: hindi ? "विषय का विश्लेषण हो रहा है…" : "Analysing the topic…",
+    finding: hindi ? "विश्वसनीय स्रोत खोजे जा रहे हैं…" : "Finding reliable sources…",
+    outlining: hindi ? "अध्याय-रूपरेखा तैयार हो रही है…" : "Building the chapter outline…",
+    saving: hindi ? "स्रोत सुरक्षित किए जा रहे हैं…" : "Saving sources…",
+    cover: hindi ? "कवर तैयार किया जा रहा है…" : "Preparing the cover…",
+    done: hindi ? "शोध पूरा हुआ।" : "Research completed.",
+    failed: hindi ? "शोध पूरा नहीं हो सका। पुनः प्रयास करें।" : "Research could not be completed. Please retry.",
+    cancelled: hindi ? "शोध रद्द किया गया। आपका डेटा सुरक्षित है।" : "Research cancelled. Your ebook data has been saved.",
+    timeout: hindi ? "शोध समय सीमा से अधिक चल गया। पुनः प्रयास करें।" : "Research timed out. Please retry.",
+    chapter: (n: number, title: string) =>
+      hindi ? `अध्याय ${n} पर शोध चल रहा है… ${title}` : `Researching chapter ${n}… ${title}`,
+  };
+}
 
 const running = new Map<string, Promise<void>>();
 const cancelled = new Set<string>();
@@ -57,6 +92,278 @@ export function startGeneration(
 
 export function isRunning(ebookId: string) {
   return running.has(ebookId);
+}
+
+export function startResearch(
+  ebookId: string,
+  jobId: string,
+  opts: { forceOutline?: boolean; replaceSources?: boolean } = {}
+) {
+  if (running.has(ebookId)) return;
+  cancelled.delete(ebookId);
+  const p = researchEbook(ebookId, jobId, opts)
+    .catch((err) => {
+      console.error("Research failed", err);
+      const raw = err instanceof Error ? err.message : "Research interrupted.";
+      const message = friendlyError(raw);
+      const current = getEbook(ebookId);
+      const hindi = isHindiOutput(current?.outputLanguage || current?.language || current?.settings?.language);
+      const copy = researchCopy(Boolean(hindi));
+      const run: ResearchRunState = {
+        status: "error",
+        percent: current?.researchRun?.percent || 0,
+        sourcesFound: current?.sources?.length || 0,
+        message: copy.failed,
+        error: message,
+        finishedAt: new Date().toISOString(),
+      };
+      updateEbook(ebookId, {
+        status: "failed",
+        error: copy.failed,
+        researchRun: run,
+        progress: { step: "failed", percent: run.percent, message: copy.failed, detail: message },
+      });
+      updateJob(jobId, { status: "failed", error: message, message: copy.failed });
+    })
+    .finally(() => running.delete(ebookId));
+  running.set(ebookId, p);
+}
+
+async function researchEbook(
+  ebookId: string,
+  jobId: string,
+  opts: { forceOutline?: boolean; replaceSources?: boolean }
+) {
+  const doc = getEbook(ebookId);
+  if (!doc) throw new Error("Ebook not found");
+  const hindi = isHindiOutput(doc.settings.outputLanguage || doc.settings.language || doc.outputLanguage);
+  const copy = researchCopy(hindi);
+
+  const setRun = (patch: Partial<ResearchRunState>, status: EbookDocument["status"], step: string) => {
+    const prev = getEbook(ebookId)?.researchRun;
+    const run: ResearchRunState = {
+      status: patch.status || prev?.status || "running",
+      startedAt: prev?.startedAt || new Date().toISOString(),
+      currentChapter: patch.currentChapter,
+      currentChapterTitle: patch.currentChapterTitle,
+      percent: patch.percent ?? prev?.percent ?? 0,
+      sourcesFound: patch.sourcesFound ?? prev?.sourcesFound ?? 0,
+      message: patch.message || prev?.message || copy.started,
+      detail: patch.detail,
+      error: patch.error,
+      finishedAt: patch.finishedAt,
+    };
+    updateEbook(ebookId, {
+      status,
+      error: patch.status === "error" ? patch.error : undefined,
+      researchRun: run,
+      progress: { step, percent: run.percent, message: run.message, detail: run.detail },
+    });
+    updateJob(jobId, { status: "running", step, percent: run.percent, message: run.message });
+  };
+
+  setRun({ status: "running", percent: 3, message: copy.started, sourcesFound: doc.sources.length }, "researching", "researching");
+
+  const vague = detectVagueness(doc.settings.topic);
+  if (vague) {
+    setRun({ status: "error", percent: 0, message: vague, error: vague, finishedAt: new Date().toISOString() }, "failed", "failed");
+    updateJob(jobId, { status: "failed", message: vague, error: vague });
+    return;
+  }
+
+  if (consumeCancel(ebookId)) {
+    setRun({ status: "cancelled", message: copy.cancelled, finishedAt: new Date().toISOString() }, "paused", "paused");
+    updateJob(jobId, { status: "cancelled", message: copy.cancelled });
+    return;
+  }
+
+  setRun({ percent: 8, message: copy.analyzing }, "analyzing", "analyzing");
+  const analysis = doc.analysis && !opts.forceOutline ? doc.analysis : await analyzeTopic(doc.settings);
+  const outputLanguage = isHindiOutput(doc.settings.outputLanguage || doc.settings.language)
+    ? "hi"
+    : analysis.outputLanguage;
+  analysis.outputLanguage = outputLanguage;
+  const resolvedTitle = (
+    doc.customTitle?.trim() ||
+    doc.settings.customTitle?.trim() ||
+    doc.title?.trim() ||
+    doc.settings.title?.trim() ||
+    analysis.normalizedTitle ||
+    ""
+  ).trim();
+  const resolvedSubtitle = doc.settings.subtitle?.trim() || doc.subtitle?.trim() || analysis.subtitle || "";
+  updateEbook(ebookId, {
+    analysis,
+    title: resolvedTitle,
+    customTitle: doc.customTitle || doc.settings.customTitle || resolvedTitle,
+    subtitle: resolvedSubtitle,
+    language: outputLanguage,
+    outputLanguage,
+    researchQuestions: analysis.researchQuestions || doc.researchQuestions || [],
+    lastCompletedStage: "settings",
+    settings: { ...doc.settings, title: resolvedTitle, language: outputLanguage, outputLanguage },
+  });
+
+  setRun({ percent: 14, message: copy.finding, detail: (analysis.searchQueries || []).slice(0, 2).join(" · ") }, "researching", "researching");
+
+  const bundle = await withTimeout(
+    runResearch(ebookId, analysis, doc.settings, (msg) => {
+      setRun(
+        { percent: 22, message: copy.finding, detail: msg, sourcesFound: getEbook(ebookId)?.sources.length || 0 },
+        "researching",
+        "researching"
+      );
+    }),
+    RESEARCH_TIMEOUT_MS,
+    copy.timeout
+  );
+
+  if (consumeCancel(ebookId)) {
+    updateEbook(ebookId, {
+      sources: bundle.sources,
+      rejectedSources: bundle.rejectedSources,
+      researchQuality: bundle.researchQuality,
+      facts: bundle.facts,
+    });
+    setRun(
+      { status: "cancelled", message: copy.cancelled, sourcesFound: bundle.sources.length, finishedAt: new Date().toISOString() },
+      "paused",
+      "paused"
+    );
+    updateJob(jobId, { status: "cancelled", message: copy.cancelled });
+    return;
+  }
+
+  const fresh = getEbook(ebookId);
+  if (!fresh) return;
+  const syllabus = fresh.syllabus?.detected ? fresh.syllabus : bundle.syllabusFromWeb;
+  const rawOutline =
+    fresh.outline.length && !opts.forceOutline
+      ? fresh.outline
+      : buildOutlineFromResearch(fresh.settings, analysis, bundle, syllabus);
+  const outline = localizeOutline(rawOutline, outputLanguage);
+
+  setRun(
+    { percent: 48, message: hindi ? "अध्यायों पर शोध चल रहा है…" : "Researching chapters…", sourcesFound: bundle.sources.length },
+    "researching",
+    "researching"
+  );
+
+  let researchCancelled = false;
+  const chaptered = await researchOutlineChapters({
+    analysis,
+    outline,
+    bundle,
+    cancelled: () => {
+      if (researchCancelled) return true;
+      if (consumeCancel(ebookId)) {
+        researchCancelled = true;
+        return true;
+      }
+      return false;
+    },
+    onProgress: (info) => {
+      setRun(
+        {
+          percent: 48 + Math.round(info.percent * 0.4),
+          message: copy.chapter(info.chapterIndex + 1, info.title),
+          detail: info.message,
+          currentChapter: info.chapterIndex,
+          currentChapterTitle: info.title,
+          sourcesFound: info.sourcesFound,
+        },
+        "researching",
+        "researching"
+      );
+    },
+  });
+
+  if (researchCancelled) {
+    updateEbook(ebookId, {
+      outline,
+      sources: chaptered.sources,
+      chapterResearch: chaptered.chapterResearch,
+      facts: chaptered.facts,
+    });
+    setRun(
+      { status: "cancelled", message: copy.cancelled, sourcesFound: chaptered.sources.length, finishedAt: new Date().toISOString() },
+      "paused",
+      "paused"
+    );
+    updateJob(jobId, { status: "cancelled", message: copy.cancelled });
+    return;
+  }
+
+  setRun({ percent: 92, message: copy.saving, sourcesFound: chaptered.sources.length }, "researching", "researching");
+
+  const blocked = bundle.researchQuality?.generationBlocked || bundle.insufficient;
+  const blockMsg =
+    bundle.researchQuality?.contaminationReason ||
+    bundle.message ||
+    (hindi ? "शोध पर्याप्त स्वच्छ नहीं है।" : "Research is not clean enough to write this ebook.");
+
+  let cover = fresh.cover;
+  if (!cover?.svg) {
+    setRun({ percent: 95, message: copy.cover }, "researching", "cover");
+    const svg = coverSvg({
+      title: resolvedTitle,
+      subtitle: resolvedSubtitle,
+      author: coverAuthor(fresh.settings),
+      style: fresh.settings.coverStyle,
+      language: outputLanguage,
+      category: analysis.category,
+    });
+    let pngPath: string | undefined;
+    try {
+      pngPath = await renderCoverPng(svg, path.join(process.cwd(), "data", "covers", `${ebookId}.png`));
+    } catch (e) {
+      console.error("cover png", e);
+    }
+    cover = { style: fresh.settings.coverStyle, svg, pngPath };
+  }
+
+  updateEbook(ebookId, {
+    outline,
+    syllabus,
+    analysis,
+    cover,
+    sources: chaptered.sources,
+    rejectedSources: bundle.rejectedSources,
+    researchQuality: bundle.researchQuality,
+    chapterResearch: chaptered.chapterResearch,
+    facts: chaptered.facts,
+    title: resolvedTitle,
+    subtitle: resolvedSubtitle,
+    language: outputLanguage,
+    outputLanguage,
+    chapterCount: outline.length,
+    status: "awaiting_outline",
+    lastCompletedStage: "research",
+    error: blocked ? blockMsg : undefined,
+    researchRun: {
+      status: blocked ? "error" : "success",
+      percent: 100,
+      sourcesFound: chaptered.sources.length,
+      message: blocked ? blockMsg : copy.done,
+      error: blocked ? blockMsg : undefined,
+      finishedAt: new Date().toISOString(),
+    },
+    progress: {
+      step: "awaiting_outline",
+      percent: 100,
+      message: blocked ? blockMsg : copy.done,
+      detail: hindi
+        ? `शोध गुणवत्ता: ${bundle.researchQuality.relevantCount} स्वीकृत / ${bundle.researchQuality.rejectedCount} अस्वीकृत`
+        : `Research Quality: ${bundle.researchQuality.relevantCount} relevant / ${bundle.researchQuality.rejectedCount} rejected`,
+    },
+  });
+  updateJob(jobId, {
+    status: blocked ? "failed" : "complete",
+    step: "awaiting_outline",
+    percent: 100,
+    message: blocked ? blockMsg : copy.done,
+    error: blocked ? blockMsg : undefined,
+  });
 }
 
 async function generateEbook(
@@ -153,26 +460,30 @@ async function generateEbook(
     bundle.message ||
     "Research is not clean enough to write this ebook.";
 
-  const cover = coverSvg({
-    title: resolvedTitle,
-    subtitle: resolvedSubtitle,
-    author: doc.settings.includeAuthor ? doc.settings.authorName || "Folio Research" : "",
-    style: doc.settings.coverStyle,
-    language: analysis.outputLanguage,
-    category: analysis.category,
-  });
-  let pngPath: string | undefined;
-  try {
-    pngPath = await renderCoverPng(cover, path.join(process.cwd(), "data", "covers", `${ebookId}.png`));
-  } catch (e) {
-    console.error("cover png", e);
+  let coverRecord = doc.cover?.svg ? doc.cover : undefined;
+  if (!coverRecord?.svg) {
+    const cover = coverSvg({
+      title: resolvedTitle,
+      subtitle: resolvedSubtitle,
+      author: coverAuthor(doc.settings),
+      style: doc.settings.coverStyle,
+      language: analysis.outputLanguage,
+      category: analysis.category,
+    });
+    let pngPath: string | undefined;
+    try {
+      pngPath = await renderCoverPng(cover, path.join(process.cwd(), "data", "covers", `${ebookId}.png`));
+    } catch (e) {
+      console.error("cover png", e);
+    }
+    coverRecord = { style: doc.settings.coverStyle, svg: cover, pngPath };
   }
 
   updateEbook(ebookId, {
     outline,
     syllabus,
     analysis,
-    cover: { style: doc.settings.coverStyle, svg: cover, pngPath },
+    cover: coverRecord,
     sources: bundle.sources,
     rejectedSources: bundle.rejectedSources,
     researchQuality: bundle.researchQuality,

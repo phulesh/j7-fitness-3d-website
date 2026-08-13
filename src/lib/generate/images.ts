@@ -5,8 +5,8 @@ import type { Chapter, ChapterImage, ChapterImageType, OutlineItem } from "../ty
 import { isHindiOutput } from "../language";
 import { escapeHtml } from "./text";
 
-const ILLUSTRATION_LABEL_HI = "व्याख्यात्मक चित्रण — ऐतिहासिक फोटोग्राफ नहीं";
-const ILLUSTRATION_LABEL_EN = "Explanatory illustration — not a historical photograph";
+const ILLUSTRATION_LABEL_HI = "व्याख्यात्मक चित्र — यह ऐतिहासिक फोटोग्राफ नहीं है।";
+const ILLUSTRATION_LABEL_EN = "Explanatory illustration — this is not a historical photograph.";
 
 export function illustrationDisclaimer(lang: string) {
   return isHindiOutput(lang) ? ILLUSTRATION_LABEL_HI : ILLUSTRATION_LABEL_EN;
@@ -23,11 +23,12 @@ export function figuresToHtml(images: ChapterImage[], lang: string): string {
       const note = unverified
         ? `<p class="figure-note">${escapeHtml(illustrationDisclaimer(lang))}</p>`
         : "";
+      const creditLabel = isHindiOutput(lang) ? "स्रोत" : "Source";
       return `<figure class="ebook-figure" data-image-type="${escapeHtml(img.imageType || "illustration")}">
-  <img src="${escapeHtml(img.url)}" alt="${escapeHtml(img.alt)}" />
+  <img src="${escapeHtml(img.url)}" alt="${escapeHtml(img.alt || img.caption)}" loading="lazy" />
   <figcaption>
     <strong>${escapeHtml(img.figureLabel || img.caption)}</strong>
-    <span class="figure-credit">स्रोत/श्रेय: ${escapeHtml(img.credit)}</span>
+    <span class="figure-credit">${creditLabel}: ${escapeHtml(img.credit)}</span>
     ${note}
   </figcaption>
 </figure>`;
@@ -151,13 +152,35 @@ export async function buildChapterVisuals(opts: {
   if (!opts.includeImages) return [];
   const hindi = isHindiOutput(opts.lang);
   const out: ChapterImage[] = [];
-  const commons = (opts.commons || []).filter((img) => img.url && img.sourceUrl).slice(0, 1);
+  const commons = (opts.commons || []).filter((img) => img.url && img.sourceUrl && img.license).slice(0, 1);
   for (const img of commons) {
+    let localPath = img.localPath;
+    let url = img.url;
+    if (img.url.startsWith("http")) {
+      try {
+        const { downloadImage } = await import("../research/commons");
+        const saved = await downloadImage(
+          img.url,
+          path.join(process.cwd(), "data", "images", opts.ebookId),
+          `ch${opts.chapterIndex + 1}-photo`
+        );
+        if (saved) {
+          localPath = saved;
+          url = `/api/ebooks/${opts.ebookId}/images/${path.basename(saved)}`;
+        } else {
+          continue;
+        }
+      } catch {
+        continue;
+      }
+    }
     out.push({
       ...img,
       id: nanoid(8),
+      url,
+      localPath,
       imageType: /portrait|ambedkar/i.test(`${img.caption} ${img.alt}`) ? "portrait" : "photograph",
-      verifiedHistoricalPhoto: true,
+      verifiedHistoricalPhoto: Boolean(img.sourceUrl && img.license),
       chapterIndex: opts.chapterIndex,
       figureLabel: figureLabel(opts.chapterIndex, out.length + 1, opts.lang),
       placement: "after-intro",
@@ -177,10 +200,10 @@ export async function buildChapterVisuals(opts: {
       url: saved.url,
       localPath: saved.localPath,
       caption,
-      credit: hindi ? "व्याख्यात्मक चित्रण — Folio" : "Explanatory illustration — Folio",
+      credit: hindi ? "व्याख्यात्मक चित्र; ऐतिहासिक फोटोग्राफ नहीं।" : "Explanatory illustration; not a historical photograph.",
       alt: hindi
-        ? `${opts.item.title} का व्याख्यात्मक चित्र। ऐतिहासिक फोटोग्राफ नहीं।`
-        : `Explanatory diagram for ${opts.item.title}. Not a historical photograph.`,
+        ? `${opts.item.title} का व्याख्यात्मक चित्र। यह ऐतिहासिक फोटोग्राफ नहीं है।`
+        : `Explanatory diagram for ${opts.item.title}. This is not a historical photograph.`,
       license: "Generated illustration",
       sourceUrl: saved.url,
       imageType: kind,

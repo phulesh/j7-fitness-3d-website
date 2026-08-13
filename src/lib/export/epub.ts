@@ -153,14 +153,39 @@ export async function exportEpub(doc: EbookDocument, destPath: string): Promise<
     html: wrap(labels.references, `<h1>${esc(labels.references)}</h1>${refs}`, rtl, doc.language),
   });
 
-  for (const c of chaptersXhtml) oebps.file(c.href, c.html);
+  const imageMap = new Map<string, string>();
+  doc.chapters.forEach((ch, ci) => {
+    (ch.images || []).forEach((img, ii) => {
+      const src = img.localPath && fs.existsSync(img.localPath) ? img.localPath : "";
+      const png = src.endsWith(".svg") ? src.replace(/\.svg$/i, ".png") : src;
+      const file = png && fs.existsSync(png) ? png : src && fs.existsSync(src) ? src : "";
+      if (!file) return;
+      const ext = path.extname(file) || ".png";
+      const name = `images/ch${ci + 1}-${ii + 1}${ext}`;
+      oebps.file(name, fs.readFileSync(file));
+      if (img.url) imageMap.set(img.url, name);
+      imageMap.set(`/api/ebooks/${doc.id}/images/${path.basename(file)}`, name);
+    });
+  });
+  for (const c of chaptersXhtml) {
+    let html = c.html;
+    for (const [from, to] of imageMap) {
+      html = html.split(from).join(to);
+    }
+    oebps.file(c.href, html);
+  }
 
+  const imageItems = [...new Set(imageMap.values())].map((href, i) => {
+    const mime = href.endsWith(".svg") ? "image/svg+xml" : href.endsWith(".png") ? "image/png" : "image/jpeg";
+    return `<item id="img${i + 1}" href="${href}" media-type="${mime}"/>`;
+  });
   const manifest = [
     `<item id="css" href="styles.css" media-type="text/css"/>`,
     `<item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>`,
     ...chaptersXhtml
       .filter((c) => c.id !== "nav")
       .map((c) => `<item id="${c.id}" href="${c.href}" media-type="application/xhtml+xml"/>`),
+    ...imageItems,
   ].join("\n    ");
 
   const spine = chaptersXhtml.map((c) => `<itemref idref="${c.id}"/>`).join("\n    ");
@@ -224,4 +249,10 @@ h2 { font-size: 1.2em; margin-top: 1.2em; }
 .answer { color: #5c4b3c; font-size: .95em; }
 a { color: #1c4c7c; }
 .cite { font-size: .75em; }
+.ebook-figure { margin: 1.2em 0; }
+.ebook-figure img { max-width: 100%; height: auto; }
+.ebook-figure figcaption { font-size: .9em; color: #5c4b3c; }
+.evidence-table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: .95em; }
+.evidence-table th, .evidence-table td { border: 1px solid #e0d5c5; padding: .4em .6em; vertical-align: top; }
+.evidence-table th { width: 2em; }
 `;

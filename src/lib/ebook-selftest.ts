@@ -14,7 +14,9 @@ import {
 } from "./generate/outline";
 import { buildOutlineFromResearch } from "./research/pipeline";
 import { buildBookPages } from "./book/pages";
-import { figuresToHtml, makeIllustrationSvg, insertFiguresIntoChapter } from "./generate/images";
+import { figuresToHtml, makeIllustrationSvg, insertFiguresIntoChapter, illustrationDisclaimer } from "./generate/images";
+import { formatCitation, finalizeSourceRecord, UNVERIFIED_LABEL } from "./research/citation";
+import { researchOutlineChapters } from "./research/chapters";
 import { buildTopicProfile } from "./research/relevance";
 
 const TOPIC = "अछूत कौन थे और अछूत कैसे बने?";
@@ -216,7 +218,7 @@ export function runUpgradeSelftest() {
     ok:
       fig.includes("चित्र 3.1") &&
       fig.includes("सत्यापित स्रोत") &&
-      fig.includes("व्याख्यात्मक चित्रण — ऐतिहासिक फोटोग्राफ नहीं"),
+      fig.includes("व्याख्यात्मक चित्र — यह ऐतिहासिक फोटोग्राफ नहीं है।"),
   });
   checks.push({ name: "Illustration SVG generates", ok: makeIllustrationSvg("timeline", TOPIC, ["1948", "1950"]).includes("1948") });
 
@@ -293,6 +295,94 @@ export function runUpgradeSelftest() {
     faqs: [],
   } as any);
   checks.push({ name: "3D/reader pages include cover and chapter", ok: pages.some((p) => p.kind === "cover") && pages.some((p) => p.kind === "chapter") });
+  checks.push({
+    name: "Book pages include figure markup",
+    ok: pages.some((p) => /ebook-figure|img src=/.test(p.html)),
+  });
+
+  const chaptered = researchOutlineChapters({
+    analysis,
+    outline: built,
+    bundle: { sources: [], facts: [] },
+  });
+  checks.push({
+    name: "Chapter research records match outline length",
+    ok: chaptered.chapterResearch.length === built.length,
+    detail: String(chaptered.chapterResearch.length),
+  });
+
+  const coverAgain = coverSvg({
+    title: TOPIC,
+    subtitle: "ऐतिहासिक शोध",
+    author: "",
+    style: "Documentary",
+    language: "hi",
+    category: "historical",
+  });
+  checks.push({
+    name: "Cover regen keeps title and invents no author",
+    ok: coverAgain.includes("अछूत") && !coverAgain.includes("Folio Research"),
+  });
+  checks.push({
+    name: "Illustration disclaimer is explicit",
+    ok: illustrationDisclaimer("hi").includes("ऐतिहासिक फोटोग्राफ नहीं"),
+  });
+  const cited = formatCitation({
+    author: "B. R. Ambedkar",
+    title: "The Untouchables",
+    publication: "1948",
+    year: "1948",
+    url: "https://archive.org/details/untouchables",
+  });
+  checks.push({
+    name: "Citation uses only real fields",
+    ok: cited.includes("Ambedkar") && cited.includes("The Untouchables") && cited.includes("archive.org"),
+  });
+  const unverified = finalizeSourceRecord({
+    id: 9,
+    title: "Unverified note",
+    organization: "",
+    url: "",
+    domain: "",
+    snippet: "",
+    extractedText: "",
+    retrievedAt: new Date().toISOString(),
+    tier: 9,
+    score: 10,
+    used: false,
+  });
+  checks.push({
+    name: "Unverified source is labelled सत्यापन आवश्यक",
+    ok: unverified.verificationStatus === "unverified" && Boolean(unverified.reliabilityNote?.includes(UNVERIFIED_LABEL)),
+  });
+
+  updateEbook(once.id, {
+    sources: [
+      finalizeSourceRecord({
+        id: 1,
+        title: "The Untouchables",
+        organization: "Internet Archive",
+        url: "https://archive.org/details/untouchables",
+        domain: "archive.org",
+        snippet: "1948",
+        extractedText: "Ambedkar published The Untouchables in 1948.",
+        retrievedAt: new Date().toISOString(),
+        tier: 2,
+        score: 90,
+        used: true,
+        primarySource: true,
+        chapterIds: [built[0].id],
+      }),
+    ],
+  });
+  const withSources = getEbook(once.id);
+  checks.push({
+    name: "Sources persist on same ebookId",
+    ok:
+      withSources?.ebookId === once.ebookId &&
+      withSources?.sources.length === 1 &&
+      withSources?.sources[0]?.url === "https://archive.org/details/untouchables",
+  });
 
   deleteEbook(once.id, userId);
   deleteEbook(titled.id, userId);

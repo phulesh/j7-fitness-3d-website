@@ -739,7 +739,10 @@ export function classifyClaim(text: string, profile: TopicProfile): ClaimKind {
   if (/\b(article 17|constitution of india|legislative\.gov|official gazette|enacted|is abolished)\b/.test(t)) {
     return "primary-source-evidence";
   }
-  if (/\b(according to ambedkar|ambedkar argues|ambedkar proposed|ambedkar suggests|ambedkar's theory|broken men theory|in the untouchables \(1948\))\b/.test(t)) {
+  if (
+    /\b(according to ambedkar|ambedkar argues|ambedkar proposed|ambedkar suggests|ambedkar's theory|broken men theory|in the untouchables \(1948\))\b/.test(t) ||
+    /आंबेडकर (के अनुसार|का तर्क|की व्याख्या|ने प्रस्तावित)|ब्रोकन मेन|Broken Men/.test(text)
+  ) {
     return "author-interpretation";
   }
   if (profile.author) {
@@ -754,7 +757,13 @@ export function classifyClaim(text: string, profile: TopicProfile): ClaimKind {
   if (/\b(hypothesis|hypothesised|hypothesized|alleged|allegedly|may have|might have|uncertain|contested|not established|proposed explanation)\b/.test(t)) {
     return "contested-uncertain";
   }
-  if (profile.claimDiscipline === "historical-hypothesis" && /\b(broken men|beef-eating|became untouchables)\b/.test(t)) {
+  if (
+    profile.claimDiscipline === "historical-hypothesis" &&
+    /\b(broken men|beef-eating|became untouchables|brahmanism)\b/.test(t)
+  ) {
+    return "author-interpretation";
+  }
+  if (/गोमांस|Beef-eating|बौद्ध धर्म और ब्राह्मण|अस्पृश्यता के उद्भव/.test(text) && profile.claimDiscipline === "historical-hypothesis") {
     return "author-interpretation";
   }
   if (/\b(primary source|original text|collected works|writings and speeches)\b/.test(t)) return "primary-source-evidence";

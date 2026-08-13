@@ -250,6 +250,26 @@ function keepIfHindi(text: string): string | null {
   return null;
 }
 
+export function evidenceTableHtml(text: string | undefined, lang: string): string {
+  const raw = (text || "").trim();
+  const hindi = isHindiOutput(lang);
+  const fallback = hindi
+    ? "A. स्थापित ऐतिहासिक साक्ष्य — केवल उद्धृत प्राथमिक/आधिकारिक स्रोत। B. विद्वत् व्याख्या। C. आंबेडकर या अन्य प्राथमिक लेखक की व्याख्या। D. परिकल्पना। E. विवादित/अनिश्चित दावे।"
+    : "A. Established historical evidence from cited primary/official sources. B. Scholarly interpretation. C. A named primary author's interpretation. D. Hypothesis. E. Disputed or uncertain claims.";
+  const src = raw || fallback;
+  const parts = src.split(/(?=[A-E]\.\s)/).map((p) => p.trim()).filter(Boolean);
+  if (parts.length < 2) return `<p>${escapeHtml(src)}</p>`;
+  const rows = parts
+    .map((p) => {
+      const m = p.match(/^([A-E])\.\s*([\s\S]+)$/);
+      if (!m) return `<tr><td colspan="2">${escapeHtml(p)}</td></tr>`;
+      return `<tr><th>${escapeHtml(m[1])}</th><td>${escapeHtml(m[2])}</td></tr>`;
+    })
+    .join("");
+  const caption = hindi ? "साक्ष्य और व्याख्या का वर्गीकरण" : "Classification of evidence and interpretation";
+  return `<table class="evidence-table"><caption>${caption}</caption><tbody>${rows}</tbody></table>`;
+}
+
 export function composeHindiChapter(opts: {
   index: number;
   item: OutlineItem;
@@ -269,13 +289,23 @@ export function composeHindiChapter(opts: {
 
   sections.push({
     id: nanoid(8),
+    heading: `अध्याय ${index + 1}`,
+    html: `<p class="chapter-open">${escapeHtml(title)}</p>
+    <p><strong>शोध प्रश्न:</strong> ${escapeHtml(item.researchQuestion || `${title} के बारे में स्रोत क्या स्थापित करते हैं?`)}</p>
+    ${item.historicalScope ? `<p><strong>ऐतिहासिक दायरा:</strong> ${escapeHtml(item.historicalScope)}</p>` : ""}`,
+    sourceIds: relevantSources.map((s) => s.id),
+  });
+
+  sections.push({
+    id: nanoid(8),
     heading: "परिचय",
     html: `<p>यह अध्याय <strong>${escapeHtml(title)}</strong> पर केंद्रित है। यह ${escapeHtml(
       settings.type
-    )} ${escapeHtml(analysis.normalizedTitle)} का हिस्सा है और ${escapeHtml(
+    )} «${escapeHtml(analysis.normalizedTitle)}» का हिस्सा है और ${escapeHtml(
       settings.audience
-    )} के लिए ${escapeHtml(settings.difficulty)} स्तर पर लिखा गया है। शोध अंग्रेज़ी स्रोतों पर भी निर्भर हो सकता है, किंतु विश्लेषण हिन्दी में है।</p>
-    <p>${escapeHtml(item.purpose || item.summary || "अध्याय शोध प्रश्नों के उत्तर स्रोत-आधारित ढंग से देता है।")}</p>`,
+    )} के लिए ${escapeHtml(settings.difficulty)} स्तर पर लिखा गया है।</p>
+    <p>${escapeHtml(item.purpose || item.summary || "अध्याय अपने शोध प्रश्न का उत्तर स्रोत-आधारित ढंग से देता है।")}</p>
+    <p>नीचे का विश्लेषण उसी शोध प्रश्न का उत्तर देता है; परिकल्पना को सिद्ध तथ्य नहीं माना गया है।</p>`,
     sourceIds: relevantSources.map((s) => s.id),
   });
 
@@ -283,7 +313,7 @@ export function composeHindiChapter(opts: {
     sections.push({
       id: nanoid(8),
       heading: "दावों को कैसे पढ़ें",
-      html: `<p>नीचे के महत्त्वपूर्ण ऐतिहासिक कथनों को <strong>प्राथमिक स्रोत साक्ष्य</strong>, <strong>लेखक की व्याख्या</strong>, <strong>परवर्ती विद्वानों की व्याख्या</strong>, या <strong>विवादास्पद / अनिश्चित</strong> के रूप में वर्गीकृत किया गया है। परिकल्पना को सिद्ध तथ्य न माना जाए।</p>`,
+      html: `<p>नीचे के महत्त्वपूर्ण ऐतिहासिक कथनों को <strong>प्राथमिक स्रोत साक्ष्य</strong>, <strong>लेखक की व्याख्या</strong>, <strong>परवर्ती विद्वानों की व्याख्या</strong>, या <strong>विवादास्पद / अनिश्चित</strong> के रूप में वर्गीकृत किया गया है। Broken Men, गोमांस/Beef-eating, बौद्ध धर्म, ब्राह्मणवाद और अस्पृश्यता के उद्भव संबंधी दावे आंबेडकर की व्याख्या/परिकल्पना हैं जब तक स्वतंत्र साक्ष्य न हो।</p>${evidenceTableHtml(item.evidenceVsInterpretation, "hi")}`,
       sourceIds: [],
     });
   }
@@ -328,11 +358,38 @@ export function composeHindiChapter(opts: {
 
   sections.push({
     id: nanoid(8),
+    heading: "साक्ष्य बनाम व्याख्या",
+    html: evidenceTableHtml(item.evidenceVsInterpretation, "hi"),
+    sourceIds: [],
+  });
+
+  sections.push({
+    id: nanoid(8),
     heading: "स्रोत-आधारित विश्लेषण",
     html: `<p>अनुमोदित स्रोतों में ${relevantSources.length || sources.length} अभिलेख इस अध्याय से जुड़े हैं। अप्रासंगिक खोज-परिणामों को अस्वीकृत सूची में रखा गया है; उन्हें अध्याय में नहीं घुसाया गया।</p>
     <p>जहाँ स्रोत एक-दूसरे से असहमत हैं, विवाद को छिपाया नहीं गया। उच्च-स्तरीय सरकारी, संस्थागत और प्राथमिक स्रोतों को प्राथमिकता दी गई है।</p>`,
     sourceIds: relevantSources.map((s) => s.id),
   });
+
+  const primary = (item.primarySources || []).filter(Boolean);
+  const secondary = (item.secondarySources || []).filter(Boolean);
+  if (primary.length || secondary.length || relevantSources.length) {
+    sections.push({
+      id: nanoid(8),
+      heading: "स्रोत-टिप्पणियाँ",
+      html: `<p><strong>प्राथमिक:</strong> ${escapeHtml(primary.join("; ") || "केवल वे प्राथमिक पाठ जो शोध सूची में वास्तव में हैं।")}</p>
+      <p><strong>द्वितीयक:</strong> ${escapeHtml(secondary.join("; ") || "केवल सत्यापित द्वितीयक स्रोत।")}</p>
+      <ul>${relevantSources
+        .slice(0, 6)
+        .map((s) => {
+          const cite = s.citation || [s.author, s.title, s.publication || s.organization, s.year, s.url].filter(Boolean).join(". ");
+          const flag = s.verificationStatus === "verified" ? "सत्यापित" : "सत्यापन आवश्यक";
+          return `<li>[${s.id}] ${escapeHtml(cite || s.title)} — <em>${flag}</em></li>`;
+        })
+        .join("")}</ul>`,
+      sourceIds: relevantSources.map((s) => s.id),
+    });
+  }
 
   if (settings.includeExamples) {
     sections.push({

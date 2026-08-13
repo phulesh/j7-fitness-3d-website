@@ -24,8 +24,10 @@ export function useEbook(ebookId: string) {
       setTimeout(() => reject(new Error("Timed out while opening this ebook. Please retry.")), 20000)
     );
     try {
-      await ensureSession();
-      const data = await Promise.race([api(`/api/ebooks/${idRef.current}`), timeout]);
+      const data = await Promise.race([
+        ensureSession().then(() => api(`/api/ebooks/${idRef.current}`)),
+        timeout,
+      ]);
       if (!data?.ebook) throw new Error("That ebook could not be found. Open My Ebooks and select the volume again.");
       setDoc(data.ebook);
       setLoadState("success");
@@ -45,7 +47,10 @@ export function useEbook(ebookId: string) {
 
   useEffect(() => {
     if (!doc) return;
-    if (["analyzing", "researching", "outlining", "writing", "fact_checking"].includes(doc.status)) {
+    if (
+      ["analyzing", "researching", "outlining", "writing", "fact_checking"].includes(doc.status) ||
+      doc.researchRun?.status === "running"
+    ) {
       const t = setInterval(() => load().catch(() => {}), 1400);
       return () => clearInterval(t);
     }

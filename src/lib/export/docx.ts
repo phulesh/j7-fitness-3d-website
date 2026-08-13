@@ -60,24 +60,32 @@ export async function exportDocx(doc: EbookDocument, destPath: string): Promise<
       for (const o of ch.learningObjectives) children.push(bullet(o));
     }
     for (const img of ch.images) {
-      if (img.localPath && fs.existsSync(img.localPath)) {
+      const raster = img.localPath?.endsWith(".svg")
+        ? img.localPath.replace(/\.svg$/i, ".png")
+        : img.localPath;
+      if (raster && fs.existsSync(raster) && /\.(png|jpe?g)$/i.test(raster)) {
         try {
-          const buf = fs.readFileSync(img.localPath);
+          const buf = fs.readFileSync(raster);
           children.push(
             new Paragraph({
               children: [
                 new ImageRun({
                   data: buf,
                   transformation: { width: 480, height: 280 },
-                  type: img.localPath.endsWith(".png") ? "png" : "jpg",
+                  type: raster.endsWith(".png") ? "png" : "jpg",
                 }),
               ],
             })
           );
-          children.push(p(`${img.caption} (${img.credit})`));
+          children.push(p(`${img.figureLabel || img.caption} — ${img.credit}`));
+          if (img.verifiedHistoricalPhoto === false) {
+            children.push(p("व्याख्यात्मक चित्र — यह ऐतिहासिक फोटोग्राफ नहीं है।"));
+          }
         } catch {
-          /* skip */
+          children.push(p(`${img.figureLabel || img.caption} — ${img.credit}`));
         }
+      } else {
+        children.push(p(`${img.figureLabel || img.caption} — ${img.credit}`));
       }
     }
     for (const sec of ch.sections) {

@@ -1,8 +1,24 @@
 import fs from "fs";
 import path from "path";
 import sharp from "sharp";
-import type { CoverStyle, TopicCategory } from "../types";
+import type { CoverStyle, EbookSettings, TopicCategory } from "../types";
 import { escapeHtml } from "./text";
+
+export function coverAuthor(settings: Pick<EbookSettings, "includeAuthor" | "authorName">): string {
+  if (!settings.includeAuthor) return "";
+  return (settings.authorName || "").trim();
+}
+
+function embeddedDevanagariFace(): string {
+  try {
+    const fontPath = path.join(process.cwd(), "public", "fonts", "NotoSansDevanagari-Regular.ttf");
+    if (!fs.existsSync(fontPath)) return "";
+    const b64 = fs.readFileSync(fontPath).toString("base64");
+    return `<defs><style><![CDATA[@font-face{font-family:'Noto Sans Devanagari';src:url('data:font/ttf;base64,${b64}') format('truetype');}]]></style></defs>`;
+  } catch {
+    return "";
+  }
+}
 
 export function coverSvg(opts: {
   title: string;
@@ -79,7 +95,7 @@ export function coverSvg(opts: {
       .join("")}
   </text>
   <rect x="0" y="980" width="800" height="220" fill="${p.band}"/>
-  <text x="72" y="1048" fill="${p.bg === "#F6F0E6" || opts.style === "Textbook" || opts.style === "Minimal" ? "#F6F0E6" : p.fg}" font-family="Georgia, serif" font-size="22">${escapeXml(opts.author || "Folio Research")}</text>
+  <text x="72" y="1048" fill="${p.bg === "#F6F0E6" || opts.style === "Textbook" || opts.style === "Minimal" ? "#F6F0E6" : p.fg}" font-family="Georgia, serif" font-size="22">${escapeXml(opts.author || "")}</text>
   <text x="72" y="1090" fill="${p.accent}" font-family="ui-sans-serif, system-ui, sans-serif" font-size="14" letter-spacing="2">${opts.aiLabel === false ? "RESEARCH-BASED EBOOK" : "RESEARCH-BASED  ·  AI STRUCTURED"}</text>
   <text x="72" y="1134" fill="${p.bg === "#F6F0E6" || opts.style === "Textbook" || opts.style === "Minimal" ? "#E8DCC8" : p.muted}" font-family="ui-sans-serif, sans-serif" font-size="13">Sources cited  ·  ${escapeXml(opts.category)}</text>
 </svg>`;

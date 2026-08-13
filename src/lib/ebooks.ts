@@ -436,9 +436,15 @@ export function clientEbook(doc: EbookDocument) {
       claimSupported: s.claimSupported,
       verificationStatus: s.verificationStatus,
       reliabilityNote: s.reliabilityNote,
+      publication: s.publication || s.publisher || s.organization,
+      citation: s.citation,
+      chapterIds: s.chapterIds || [],
+      notes: s.notes,
     })),
     rejectedSources: doc.rejectedSources || [],
     researchQuality: doc.researchQuality,
+    chapterResearch: doc.chapterResearch || [],
+    researchRun: doc.researchRun || { status: "idle", percent: 0, sourcesFound: 0, message: "" },
     facts: doc.facts,
   };
 }
