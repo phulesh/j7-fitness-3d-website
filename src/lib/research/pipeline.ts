@@ -6,6 +6,7 @@ import {
   fetchWikibooksChapter,
   findEnglishTitleThenLang,
   type WikiPage,
+  type WikiSearchHit,
 } from "./wikipedia";
 import {
   webSearch,
@@ -80,12 +81,13 @@ export async function runResearch(
     /* optional */
   }
 
-  const [wikiHits, wikiHitsEn] = liveWeb
+  const wikiResults: [WikiSearchHit[], WikiSearchHit[]] = liveWeb
     ? await Promise.all([
         wikiSearch(topic, lang, 8).catch(() => []),
         lang === "en" ? Promise.resolve([]) : wikiSearch(topic, "en", 6).catch(() => []),
       ])
     : [[], []];
+  const [wikiHits, wikiHitsEn] = wikiResults;
 
   for (const h of [...wikiHits, ...wikiHitsEn]) {
     const wlang = wikiHits.includes(h) ? lang : "en";

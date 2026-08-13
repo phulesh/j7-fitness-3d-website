@@ -5,44 +5,71 @@ import type { EbookDocument, Chapter, SourceRecord } from "../types";
 import { isRtl } from "../language";
 import { labelsFor } from "../generate/write";
 
-function fonts(lang?: string) {
+type PdfFonts = {
+  regular: string;
+  bold: string;
+  serif: string;
+  serifBold: string;
+};
+
+function fonts(lang?: string): PdfFonts {
   const dir = path.join(process.cwd(), "public", "fonts");
-  const indic = ["hi", "mr", "ne", "sa"].includes(lang || "");
-  const regular = firstExisting([
-    ...(indic
-      ? [path.join(dir, "NotoSansDevanagari-Regular.ttf"), path.join(dir, "DejaVuSans.ttf")]
-      : [path.join(dir, "DejaVuSans.ttf"), path.join(dir, "NotoSansDevanagari-Regular.ttf")]),
-    path.join(dir, "GoNotoKurrent-Regular.ttf"),
-    path.join(dir, "NotoSans-Regular.ttf"),
-    path.join(dir, "SourceSerif4-Regular.ttf"),
-  ]);
-  const bold = firstExisting([
-    path.join(dir, "GoNotoKurrent-Bold.ttf"),
-    path.join(dir, "DejaVuSans-Bold.ttf"),
-    path.join(dir, "NotoSans-Bold.ttf"),
-    path.join(dir, "SourceSerif4-Bold.ttf"),
-    regular,
-  ]);
-  const serif = firstExisting([
-    path.join(dir, "SourceSerif4-Regular.ttf"),
-    path.join(dir, "DejaVuSerif.ttf"),
-    regular,
-  ]);
-  const serifBold = firstExisting([
-    path.join(dir, "SourceSerif4-Bold.ttf"),
-    path.join(dir, "DejaVuSerif-Bold.ttf"),
-    bold,
-  ]);
+  const language = (lang || "").split("-")[0].toLowerCase();
+  const indic = ["hi", "mr", "ne", "sa"].includes(language);
+
+  // These are the font files bundled with the application. Keep the regular
+  // font mandatory: PDFKit's built-in fonts do not provide reliable Unicode
+  // coverage, which is especially important for Devanagari output.
+  const regular = requireFont(
+    "regular",
+    indic
+      ? [path.join(dir, "NotoSansDevanagari-Regular.ttf")]
+      : [
+          path.join(dir, "DejaVuSans.ttf"),
+          path.join(dir, "NotoSansDevanagari-Regular.ttf"),
+        ]
+  );
+
+  // There is no bundled Devanagari bold face. Reusing the verified regular
+  // face preserves glyph coverage instead of selecting DejaVu Sans Bold,
+  // which does not contain Devanagari glyphs.
+  const bold = firstExisting(
+    indic
+      ? [regular]
+      : [path.join(dir, "DejaVuSans-Bold.ttf"), path.join(dir, "DejaVuSans.ttf"), regular]
+  ) ?? regular;
+
+  // The serif faces are optional styling. If they are unavailable, fall back
+  // to an already verified sans face. For Devanagari, keep the script-capable
+  // regular/bold faces rather than switching to a serif with missing glyphs.
+  const serif = firstExisting(
+    indic ? [regular] : [path.join(dir, "DejaVuSerif.ttf"), regular]
+  ) ?? regular;
+  const serifBold = firstExisting(
+    indic ? [bold] : [path.join(dir, "DejaVuSerif-Bold.ttf"), bold]
+  ) ?? bold;
+
   return { regular, bold, serif, serifBold };
 }
 
-function firstExisting(paths: string[]): string | undefined {
-  return paths.find((p) => p && fs.existsSync(p));
+function firstExisting(paths: readonly string[]): string | undefined {
+  return paths.find((fontPath) => fs.existsSync(fontPath));
+}
+
+function requireFont(label: string, candidates: readonly string[]): string {
+  const existing = firstExisting(candidates);
+  if (existing) return existing;
+
+  // Report only bundled filenames, not the server's absolute filesystem path.
+  // This is useful in production logs without leaking Railway's directory
+  // layout to an API client.
+  const filenames = candidates.map((fontPath) => path.basename(fontPath)).join(", ");
+  throw new Error(`PDF export requires a ${label} font. None of these bundled font files were found: ${filenames}.`);
 }
 
 export async function exportPdf(doc: EbookDocument, destPath: string): Promise<string> {
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
-  const f = fonts();
+  const f = fonts(doc.language);
   const labels = labelsFor(doc.language);
   const rtl = isRtl(doc.language);
 
@@ -63,18 +90,22 @@ export async function exportPdf(doc: EbookDocument, destPath: string): Promise<s
   const stream = fs.createWriteStream(destPath);
   pdf.pipe(stream);
 
-  if (f.regular) pdf.registerFont("Body", f.regular);
-  if (f.bold) pdf.registerFont("BodyBold", f.bold);
-  if (f.serif) pdf.registerFont("Serif", f.serif);
-  if (f.serifBold) pdf.registerFont("SerifBold", f.serifBold);
-  const BODY = f.regular ? "Body" : "Times-Roman";
-  const BOLD = f.bold ? "BodyBold" : "Times-Bold";
-  const SERIF = f.serif ? "Serif" : BODY;
-  const SERIFBOLD = f.serifBold ? "SerifBold" : BOLD;
+  pdf.registerFont("Body", f.regular);
+  pdf.registerFont("BodyBold", f.bold);
+  pdf.registerFont("Serif", f.serif);
+  pdf.registerFont("SerifBold", f.serifBold);
+  const BODY = "Body";
+  const BOLD = "BodyBold";
+  const SERIF = "Serif";
+  const SERIFBOLD = "SerifBold";
 
   const used = new Set<number>();
   const markCites = (text: string) => {
-    for (const m of text.matchAll(/\[(\d+)\]/g)) used.add(Number(m[1]));
+    const citationPattern = /\[(\d+)\]/g;
+    let match: RegExpExecArray | null;
+    while ((match = citationPattern.exec(text)) !== null) {
+      used.add(Number(match[1]));
+    }
     return text;
   };
 

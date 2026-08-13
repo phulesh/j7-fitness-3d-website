@@ -216,6 +216,18 @@ function arr(v: unknown): string[] {
   return Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean).slice(0, 12) : [];
 }
 
+function citeIds(text: string, fallback: number[]): number[] {
+  const allowed = new Set(fallback);
+  const cited: number[] = [];
+  const citationPattern = /\[(\d+)\]/g;
+  let match: RegExpExecArray | null;
+  while ((match = citationPattern.exec(text)) !== null) {
+    const id = Number(match[1]);
+    if (allowed.has(id) && !cited.includes(id)) cited.push(id);
+  }
+  return cited.length ? cited : fallback;
+}
+
 function asQuiz(v: unknown): QuizItem[] {
   if (!Array.isArray(v)) return [];
   return v.slice(0, 8).map((q: any) => ({
