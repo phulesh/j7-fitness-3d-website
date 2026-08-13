@@ -15,6 +15,8 @@ export function chapterPlain(ch: Chapter): string {
     ...ch.sections.map((s) => s.heading + " " + s.html.replace(/<[^>]+>/g, " ")),
     ...ch.keyPoints,
     ch.summary,
+    ...ch.questions.flatMap((question) => [question.question, question.answer, question.explanation || ""]),
+    ...ch.mcqs.flatMap((question) => [question.question, question.answer, question.explanation || ""]),
   ].join(" ");
 }
 

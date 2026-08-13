@@ -85,6 +85,33 @@ function escapeXml(s: string) {
     .replace(/"/g, "&quot;");
 }
 
+function wrapFigureText(value: string, maxChars: number, maxLines: number) {
+  const words = (value || "").trim().split(/\s+/).filter(Boolean);
+  const lines: string[] = [];
+  let current = "";
+  for (const word of words) {
+    if (current && current.length + word.length + 1 > maxChars) {
+      lines.push(current);
+      current = word;
+      if (lines.length === maxLines - 1) break;
+    } else {
+      current += `${current ? " " : ""}${word}`;
+    }
+  }
+  if (current && lines.length < maxLines) lines.push(current);
+  if (words.join(" ").length > lines.join(" ").length && lines.length) {
+    lines[lines.length - 1] = `${lines[lines.length - 1].replace(/[.…]+$/, "")}…`;
+  }
+  return lines;
+}
+
+function svgMultiline(value: string, x: number, y: number, maxChars: number, maxLines: number, fontSize = 18) {
+  const lines = wrapFigureText(value, maxChars, maxLines);
+  return `<text x="${x}" y="${y}" text-anchor="middle" fill="#3A2C22" font-size="${fontSize}">${lines
+    .map((line, index) => `<tspan x="${x}" dy="${index ? 1.45 : 0}em">${escapeXml(line)}</tspan>`)
+    .join("")}</text>`;
+}
+
 export function makeIllustrationSvg(
   kind: ChapterImageType,
   title: string,
@@ -96,7 +123,7 @@ export function makeIllustrationSvg(
       .map((p, i) => {
         const x = 120 + i * 200;
         return `<circle cx="${x}" cy="340" r="14" fill="#7A2E3A"/>
-        <text x="${x}" y="300" text-anchor="middle" fill="#1C1410" font-family="'Noto Sans Devanagari', Georgia, serif" font-size="18">${escapeXml(p)}</text>`;
+        ${svgMultiline(p, x, 280, 16, 2, 17)}`;
       })
       .join("");
     return svgWrap(`<line x1="80" y1="340" x2="1120" y2="340" stroke="#9A7B2F" stroke-width="4"/>${inner}`, title);
@@ -120,10 +147,10 @@ export function makeIllustrationSvg(
     return svgWrap(
       `<rect x="80" y="140" width="480" height="460" fill="#EDE4D4" stroke="#9A7B2F"/>
        <rect x="640" y="140" width="480" height="460" fill="#E8D5D0" stroke="#7A2E3A"/>
-       <text x="320" y="190" text-anchor="middle" font-size="22" fill="#1C1410" font-family="'Noto Sans Devanagari', Georgia, serif">${escapeXml(lines[0] || "साक्ष्य")}</text>
-       <text x="880" y="190" text-anchor="middle" font-size="22" fill="#1C1410" font-family="'Noto Sans Devanagari', Georgia, serif">${escapeXml(lines[1] || "व्याख्या")}</text>
-       <text x="320" y="280" text-anchor="middle" font-size="18" fill="#3A2C22" font-family="'Noto Sans Devanagari', Georgia, serif">${escapeXml(lines[2] || "")}</text>
-       <text x="880" y="280" text-anchor="middle" font-size="18" fill="#3A2C22" font-family="'Noto Sans Devanagari', Georgia, serif">${escapeXml(lines[3] || "")}</text>`,
+       ${svgMultiline(lines[0] || "साक्ष्य", 320, 185, 28, 2, 22)}
+       ${svgMultiline(lines[1] || "व्याख्या", 880, 185, 28, 2, 22)}
+       ${svgMultiline(lines[2] || "", 320, 270, 38, 7, 17)}
+       ${svgMultiline(lines[3] || "", 880, 270, 38, 7, 17)}`,
       title
     );
   }
@@ -131,14 +158,14 @@ export function makeIllustrationSvg(
     const boxes = (lines.length ? lines : ["अवधारणा", "साक्ष्य", "व्याख्या"]).slice(0, 4);
     const inner = boxes
       .map((b, i) => `<rect x="${80 + i * 280}" y="220" width="240" height="220" rx="12" fill="#FFF9F0" stroke="#9A7B2F"/>
-        <text x="${200 + i * 280}" y="340" text-anchor="middle" font-size="18" fill="#1C1410" font-family="'Noto Sans Devanagari', Georgia, serif">${escapeXml(b)}</text>`)
+        ${svgMultiline(b, 200 + i * 280, 300, 20, 5, 17)}`)
       .join("");
     return svgWrap(inner, title);
   }
   return svgWrap(
     `<rect x="160" y="160" width="880" height="420" rx="16" fill="#FFF9F0" stroke="#7A2E3A"/>
-     <text x="600" y="360" text-anchor="middle" font-size="26" fill="#1C1410" font-family="'Noto Sans Devanagari', Georgia, serif">${escapeXml(lines[0] || title)}</text>
-     <text x="600" y="410" text-anchor="middle" font-size="18" fill="#5C4B3C" font-family="'Noto Sans Devanagari', Georgia, serif">${escapeXml(lines[1] || "")}</text>`,
+     ${svgMultiline(lines[0] || title, 600, 300, 55, 3, 24)}
+     ${svgMultiline(lines[1] || "", 600, 430, 70, 3, 17)}`,
     title
   );
 }
@@ -218,8 +245,8 @@ export async function buildChapterVisuals(opts: {
   for (const kind of kinds) {
     if (out.length >= 3) break;
     const caption = hindi
-      ? `${figureLabel(opts.chapterIndex, out.length + 1, opts.lang)} — ${opts.item.title}`
-      : `${figureLabel(opts.chapterIndex, out.length + 1, opts.lang)} — ${opts.item.title}`;
+      ? `${opts.item.title}: ${opts.item.summary || "इस अध्याय की प्रमाण-श्रृंखला और प्रमुख अवधारणाओं का दृश्य स्पष्टीकरण।"}`
+      : `${opts.item.title}: ${opts.item.summary || "A visual explanation of this chapter's evidence chain and central concepts."}`;
     const svg = makeIllustrationSvg(kind, opts.item.title, visualLines(opts.item, kind, hindi));
     const saved = await persistIllustration(svg, opts.ebookId, `ch${opts.chapterIndex + 1}-${kind}-${out.length + 1}`);
     out.push({
