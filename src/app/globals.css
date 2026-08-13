@@ -114,6 +114,27 @@ body {
   background: #f3ede3;
   padding: 0.1em 0.35em;
 }
+.prose-ebook .ebook-figure,
+.ebook-figure {
+  margin: 1.4em 0;
+  padding: 0.8em;
+  border: 1px solid #e0d5c5;
+  background: #fff9f0;
+}
+.ebook-figure img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+.ebook-figure figcaption,
+.ebook-figure .figure-credit,
+.ebook-figure .figure-note {
+  display: block;
+  margin-top: 0.4em;
+  font-size: 0.85em;
+  color: #5c4b3c;
+}
 
 input,
 textarea,

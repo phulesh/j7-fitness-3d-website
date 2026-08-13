@@ -312,6 +312,14 @@ export function addSourceRow(ebookId: string, source: SourceRecord) {
   persist();
 }
 
+export function removeSourceRow(ebookId: string, sourceId: number) {
+  const store = getStore();
+  const before = store.sources.length;
+  store.sources = store.sources.filter((s) => !(s.ebookId === ebookId && Number(s.id) === Number(sourceId)));
+  persist();
+  return store.sources.length < before;
+}
+
 export function addResearch(ebookId: string, query: string, provider: string, results: unknown) {
   getStore().research.push({
     id: nanoid(12),
@@ -419,6 +427,15 @@ export function clientEbook(doc: EbookDocument) {
       primarySource: s.primarySource,
       academicSource: s.academicSource,
       reasonForInclusion: s.reasonForInclusion,
+      author: s.author,
+      year: s.year,
+      publisher: s.publisher,
+      sourceType: s.sourceType,
+      identifier: s.identifier || s.url,
+      relevantChapter: s.relevantChapter,
+      claimSupported: s.claimSupported,
+      verificationStatus: s.verificationStatus,
+      reliabilityNote: s.reliabilityNote,
     })),
     rejectedSources: doc.rejectedSources || [],
     researchQuality: doc.researchQuality,

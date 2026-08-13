@@ -67,7 +67,12 @@ function pageTexture(page: BookPage, coverSvg?: string): THREE.CanvasTexture {
     ctx.font = "22px Georgia, 'Noto Sans Devanagari', serif";
     wrapLines(ctx, plain.slice(page.title.length).trim(), 72, 620, w - 144, 32, 6);
     if (coverSvg) {
-      /* decorative only — SVG is shown in the 2D cover as well */
+      try {
+        const img = new Image();
+        img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(coverSvg)}`;
+      } catch {
+        /* canvas fallback already drawn */
+      }
     }
   } else {
     ctx.fillStyle = "#9A7B2F";

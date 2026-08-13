@@ -22,6 +22,10 @@ function assert(cond: unknown, msg: string) {
 
 function main() {
   assert(isAmbedkarUntouchablesTopic(TOPIC), "topic should be detected as Ambedkar / Untouchables");
+  assert(
+    isAmbedkarUntouchablesTopic("अछूत कौन थे और अछूत कैसे बने?"),
+    "Hindi Achhoot question must be detected as the same research topic"
+  );
   assert(categorize(TOPIC, "Educational Book") === "historical", "category must be historical, not academic/biography");
 
   const profile = buildTopicProfile(TOPIC, { category: "historical", type: "Educational Book" });

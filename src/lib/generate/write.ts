@@ -27,6 +27,7 @@ import {
   hindiWriterPromptAddon,
   localizeTitle,
 } from "./hindi";
+import { figuresToHtml } from "./images";
 
 export { chapterPlain, countWords, escapeHtml, labelsFor } from "./text";
 
@@ -87,9 +88,11 @@ function notesForChapter(
     }
   }
 
-  const images = bundle.images.filter((img) => {
+  const images = (bundle.images || []).filter((img) => {
+    if (typeof img.chapterIndex === "number") return true;
+    if (img.imageType && img.imageType !== "photograph") return true;
     const c = `${img.caption} ${img.alt}`.toLowerCase();
-    return titleWords.some((w) => c.includes(w));
+    return !titleWords.length || titleWords.some((w) => c.includes(w));
   });
 
   return { notes: paras.join("\n\n").slice(0, 14000), sourceIds: [...sourceIds], images };
@@ -324,11 +327,17 @@ export function writeChapterFromSources(opts: {
     summary,
     questions,
     mcqs,
-    images: images.slice(0, 3),
+    images: images.slice(0, 4),
     sourceIds: [...new Set(sourceIds.concat(relevant.flatMap((p) => p.sourceIds)))],
     wordCount: 0,
     status: "complete",
   };
+  if (ch.images.length) {
+    const target = ch.sections[Math.min(1, Math.max(0, ch.sections.length - 1))];
+    if (target && !/ebook-figure/.test(target.html)) {
+      target.html += figuresToHtml(ch.images, analysis.outputLanguage);
+    }
+  }
 
   if (!ch.sections.length) {
     ch.sections.push({

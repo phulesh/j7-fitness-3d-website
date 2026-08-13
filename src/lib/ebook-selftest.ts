@@ -1,7 +1,23 @@
 import { createEbook, deleteEbook, findRecentDuplicateDraft, listEbooks, updateEbook, getEbook } from "./ebooks";
 import { isAcceptableHindi, normalizeOutputLanguage, resolveOutputLanguage } from "./language";
 import { composeHindiChapter } from "./generate/hindi";
+import { coverSvg } from "./generate/cover";
 import { DEFAULT_SETTINGS } from "./types";
+import { isAmbedkarUntouchablesTopic } from "./research/relevance";
+import { categorize } from "./generate/analyze";
+import {
+  ACHHOOT_HINDI_TITLES,
+  isAchhootResearchTopic,
+  plannedChaptersForTopic,
+  plannedToOutlineItems,
+  fillOutlineItem,
+} from "./generate/outline";
+import { buildOutlineFromResearch } from "./research/pipeline";
+import { buildBookPages } from "./book/pages";
+import { figuresToHtml, makeIllustrationSvg, insertFiguresIntoChapter } from "./generate/images";
+import { buildTopicProfile } from "./research/relevance";
+
+const TOPIC = "अछूत कौन थे और अछूत कैसे बने?";
 
 export function runUpgradeSelftest() {
   const checks: { name: string; ok: boolean; detail?: string }[] = [];
@@ -12,27 +28,136 @@ export function runUpgradeSelftest() {
   const resolved = resolveOutputLanguage("hi", "Python for Beginners");
   checks.push({ name: "Hindi is not overwritten by English topic", ok: resolved === "hi", detail: resolved });
 
+  checks.push({
+    name: "Hindi Achhoot topic is detected",
+    ok: isAmbedkarUntouchablesTopic(TOPIC) && isAchhootResearchTopic(TOPIC),
+  });
+  checks.push({
+    name: "Hindi Achhoot topic is historical",
+    ok: categorize(TOPIC, "Research-Based Book") === "historical",
+  });
+
+  const analysis = {
+    topic: TOPIC,
+    normalizedTitle: TOPIC,
+    subtitle: "शोध",
+    detectedLanguage: "hi",
+    outputLanguage: "hi",
+    category: "historical" as const,
+    audienceSuggestion: "Researchers",
+    needsCurrentInfo: false,
+    copyrightMode: false,
+    sensitiveDomain: "none" as const,
+    prioritySourceHints: [],
+    searchQueries: [],
+    wikiLanguage: "hi",
+    summary: "शोध",
+    researchQuestions: ["अछूत कौन थे?"],
+    topicKind: "named-work-inquiry",
+  };
+
+  const settings = {
+    ...DEFAULT_SETTINGS,
+    topic: TOPIC,
+    language: "hi",
+    outputLanguage: "hi",
+    type: "Research-Based Book" as const,
+    chapterCount: 14,
+    audience: "Researchers",
+    difficulty: "Advanced" as const,
+  };
+
+  const plan = plannedChaptersForTopic({ topic: TOPIC, settings, analysis, requestedCount: 14 });
+  checks.push({ name: "Achhoot plan has 14 chapters", ok: plan.length === 14, detail: String(plan.length) });
+  const titlesMatch = plan.every((p, i) => p.title === ACHHOOT_HINDI_TITLES[i]);
+  checks.push({ name: "Achhoot titles match required 14", ok: titlesMatch, detail: plan.map((p) => p.title).join(" | ") });
+
+  const emptyBundle = { sources: [], facts: [] };
+  const items = plannedToOutlineItems(plan, emptyBundle);
+  const metaOk = items.every(
+    (it) =>
+      it.chapterNumber &&
+      it.title &&
+      it.historicalScope &&
+      (it.keyTopics || []).length &&
+      (it.researchQuestion || (it.researchQuestions || []).length) &&
+      (it.primarySources || []).length &&
+      (it.secondarySources || []).length &&
+      (it.claimsToVerify || []).length &&
+      it.uncertaintyNotes &&
+      it.evidenceVsInterpretation
+  );
+  checks.push({ name: "Every Achhoot chapter has required metadata", ok: metaOk });
+
+  const built = buildOutlineFromResearch(settings, analysis, {
+    sources: [],
+    rejectedSources: [],
+    researchQuality: { relevantCount: 0, rejectedCount: 0, generationBlocked: false, approved: [], rejected: [] },
+    facts: [],
+    wikiPages: [],
+    images: [],
+    insufficient: false,
+    profile: buildTopicProfile(TOPIC, { category: "historical", type: "Research-Based Book" }),
+  } as any);
+  checks.push({
+    name: "buildOutlineFromResearch returns 14 Hindi titles",
+    ok: built.length === 14 && built[0].title === ACHHOOT_HINDI_TITLES[0] && built[13].title === ACHHOOT_HINDI_TITLES[13],
+    detail: built.map((b) => b.title).join(" | "),
+  });
+  checks.push({
+    name: "No generic Hindi template titles",
+    ok: !built.some((b) => /यह विषय क्या है|आधार और शब्दावली|मूल विचार विस्तार से|विधियाँ और कार्य-प्रणाली|वास्तविक अनुप्रयोग/.test(b.title)),
+  });
+
+  const other = plannedChaptersForTopic({
+    topic: "भारतीय स्वतंत्रता आंदोलन",
+    settings: { ...settings, topic: "भारतीय स्वतंत्रता आंदोलन" },
+    analysis: { ...analysis, topic: "भारतीय स्वतंत्रता आंदोलन", category: "historical" },
+    requestedCount: 10,
+  });
+  checks.push({
+    name: "Independence outline is topic-specific",
+    ok: other.length >= 8 && other.some((c) => /स्वतंत्रता|1857|गाँधी|Quit India|भारत छोड़ो/.test(c.title)),
+    detail: other.map((c) => c.title).slice(0, 4).join(" | "),
+  });
+  checks.push({
+    name: "Independence outline does not reuse Ambedkar 14",
+    ok: !other.some((c) => ACHHOOT_HINDI_TITLES.includes(c.title as any)),
+  });
+
+  const ancient = plannedChaptersForTopic({
+    topic: "प्राचीन भारतीय समाज",
+    settings: { ...settings, topic: "प्राचीन भारतीय समाज" },
+    analysis: { ...analysis, topic: "प्राचीन भारतीय समाज" },
+    requestedCount: 10,
+  });
+  checks.push({
+    name: "Ancient society outline is distinct",
+    ok: ancient.some((c) => /प्राचीन|वैदिक|वर्ण/.test(c.title)) && !ancient.some((c) => /Broken Men/.test(c.title)),
+  });
+
   const chapter = composeHindiChapter({
     index: 0,
-    item: { id: "t1", title: "अस्पृश्यता क्या है?", summary: "परिभाषा", sourceIds: [] },
-    settings: { ...DEFAULT_SETTINGS, language: "hi", outputLanguage: "hi", topic: "The Untouchables — B. R. Ambedkar" },
-    analysis: {
-      topic: "The Untouchables — B. R. Ambedkar",
-      normalizedTitle: "The Untouchables",
-      subtitle: "शोध",
-      detectedLanguage: "en",
-      outputLanguage: "hi",
-      category: "historical",
-      audienceSuggestion: "Researchers",
-      needsCurrentInfo: false,
-      copyrightMode: false,
-      sensitiveDomain: "none",
-      prioritySourceHints: [],
-      searchQueries: [],
-      wikiLanguage: "hi",
-      summary: "शोध",
-      researchQuestions: ["अस्पृश्यता क्या है?"],
-    },
+    item: fillOutlineItem(
+      {
+        id: "t1",
+        title: ACHHOOT_HINDI_TITLES[0],
+        summary: "परिभाषा",
+        sourceIds: [],
+        historicalScope: "1948",
+        researchQuestion: "अछूत कौन थे?",
+        keyTopics: ["अस्पृश्यता"],
+        primarySources: ["The Untouchables (1948)"],
+        secondarySources: ["Wikipedia"],
+        claimsToVerify: ["पुस्तक की तिथि"],
+        uncertaintyNotes: "परिकल्पना नहीं गढ़ें",
+        evidenceVsInterpretation: "A स्थापित / C व्याख्या",
+      },
+      0,
+      emptyBundle
+    ),
+    settings,
+    analysis,
     sources: [
       {
         id: 1,
@@ -57,6 +182,60 @@ export function runUpgradeSelftest() {
     detail: chapter.title,
   });
 
+  const svg = coverSvg({
+    title: TOPIC,
+    subtitle: "ऐतिहासिक शोध",
+    author: "Folio Research",
+    style: "Historical",
+    language: "hi",
+    category: "historical",
+  });
+  checks.push({
+    name: "Cover keeps Devanagari title",
+    ok: svg.includes("अछूत") && /Noto Sans Devanagari/.test(svg) && !/Who Were They/.test(svg),
+  });
+
+  const fig = figuresToHtml(
+    [
+      {
+        url: "/x.svg",
+        caption: "चित्र 3.1 — डॉ. बी. आर. आंबेडकर के सार्वजनिक जीवन का संदर्भ",
+        credit: "सत्यापित स्रोत",
+        alt: "अध्याय के ऐतिहासिक संदर्भ को समझाने वाला चित्र।",
+        license: "CC",
+        sourceUrl: "/x.svg",
+        imageType: "illustration",
+        verifiedHistoricalPhoto: false,
+        figureLabel: "चित्र 3.1 — डॉ. बी. आर. आंबेडकर के सार्वजनिक जीवन का संदर्भ",
+      },
+    ],
+    "hi"
+  );
+  checks.push({
+    name: "Figure HTML has caption, credit, illustration label",
+    ok:
+      fig.includes("चित्र 3.1") &&
+      fig.includes("सत्यापित स्रोत") &&
+      fig.includes("व्याख्यात्मक चित्रण — ऐतिहासिक फोटोग्राफ नहीं"),
+  });
+  checks.push({ name: "Illustration SVG generates", ok: makeIllustrationSvg("timeline", TOPIC, ["1948", "1950"]).includes("1948") });
+
+  chapter.images = [
+    {
+      url: "/x.svg",
+      caption: "चित्र 1.1",
+      credit: "Folio",
+      alt: "व्याख्या",
+      license: "gen",
+      sourceUrl: "/x.svg",
+      imageType: "illustration",
+      verifiedHistoricalPhoto: false,
+      figureLabel: "चित्र 1.1",
+    },
+  ];
+  insertFiguresIntoChapter(chapter, "hi");
+  checks.push({ name: "Figures insert into chapter HTML", ok: chapter.sections.some((s) => /ebook-figure/.test(s.html)) });
+
   const userId = "selftest-user";
   const first = createEbook(userId, { ...DEFAULT_SETTINGS, topic: "Selftest Unique Topic XYZ", language: "hi" });
   const dup = findRecentDuplicateDraft(userId, "Selftest Unique Topic XYZ");
@@ -67,8 +246,6 @@ export function runUpgradeSelftest() {
   checks.push({ name: "Update keeps one ebookId", ok: listed.length === 1 && updated?.ebookId === first.id, detail: updated?.ebookId });
   checks.push({ name: "ebookId equals id", ok: first.ebookId === first.id && getEbook(first.ebookId)?.id === first.id });
 
-  // Language persistence: a Hindi book must report settings.language === "hi"
-  // on hydration so the Edit dropdown never shows "Auto".
   const hindiBook = createEbook(userId, { ...DEFAULT_SETTINGS, topic: "Hindi Persistence Topic", language: "hi", outputLanguage: "hi" });
   const reloaded = getEbook(hindiBook.id);
   checks.push({
@@ -77,7 +254,6 @@ export function runUpgradeSelftest() {
     detail: `settings=${reloaded?.settings.language} out=${reloaded?.outputLanguage}`,
   });
 
-  // User title survives a settings round-trip (must not revert to a derived title).
   const titled = createEbook(userId, { ...DEFAULT_SETTINGS, topic: "Some Topic", language: "hi", customTitle: "अछूत कौन थे" });
   const titledReloaded = getEbook(titled.id);
   checks.push({
@@ -85,8 +261,41 @@ export function runUpgradeSelftest() {
     ok: titledReloaded?.title === "अछूत कौन थे",
     detail: titledReloaded?.title,
   });
-  deleteEbook(titled.id, userId);
 
+  const once = createEbook(userId, {
+    ...settings,
+    customTitle: TOPIC,
+    title: TOPIC,
+  });
+  updateEbook(once.id, { outline: built, analysis, chapterCount: built.length, status: "awaiting_outline" });
+  const again = getEbook(once.id);
+  checks.push({
+    name: "Reopen preserves 14-chapter outline",
+    ok: (again?.outline.length || 0) === 14 && again?.outline[3]?.title === ACHHOOT_HINDI_TITLES[3],
+  });
+  const afterRefresh = getEbook(once.ebookId);
+  checks.push({
+    name: "Refresh preserves same ebookId and outline",
+    ok: afterRefresh?.ebookId === once.ebookId && afterRefresh?.outline.length === 14,
+  });
+  const pages = buildBookPages({
+    ...afterRefresh!,
+    chapters: [
+      {
+        ...chapter,
+        title: ACHHOOT_HINDI_TITLES[0],
+      },
+    ],
+    introduction: "भूमिका",
+    conclusion: "निष्कर्ष",
+    sources: [],
+    glossary: [],
+    faqs: [],
+  } as any);
+  checks.push({ name: "3D/reader pages include cover and chapter", ok: pages.some((p) => p.kind === "cover") && pages.some((p) => p.kind === "chapter") });
+
+  deleteEbook(once.id, userId);
+  deleteEbook(titled.id, userId);
   deleteEbook(first.id, userId);
   deleteEbook(hindiBook.id, userId);
 

@@ -43,14 +43,21 @@ export const loginSchema = z.object({
 export const outlineSchema = z.array(
   z.object({
     id: z.string(),
+    chapterNumber: z.number().int().min(1).max(40).optional(),
     title: z.string().min(1).max(200),
     summary: z.string().max(4000).default(""),
     purpose: z.string().max(2000).optional(),
+    historicalScope: z.string().max(2000).optional(),
+    researchQuestion: z.string().max(800).optional(),
     researchQuestions: z.array(z.string().max(400)).optional(),
     keyTopics: z.array(z.string().max(200)).optional(),
     evidence: z.array(z.string().max(800)).optional(),
     importantClaims: z.array(z.string().max(800)).optional(),
+    claimsToVerify: z.array(z.string().max(800)).optional(),
     uncertaintyNotes: z.string().max(2000).optional(),
+    primarySources: z.array(z.string().max(400)).optional(),
+    secondarySources: z.array(z.string().max(400)).optional(),
+    evidenceVsInterpretation: z.string().max(4000).optional(),
     sourceIds: z.array(z.number()).optional(),
     children: z
       .array(z.object({ title: z.string(), summary: z.string().optional().default("") }))

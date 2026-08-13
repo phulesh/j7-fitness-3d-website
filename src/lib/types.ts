@@ -94,6 +94,11 @@ export const COVER_STYLES = [
   "Creative",
   "Technical",
   "Textbook",
+  "Historical",
+  "Documentary",
+  "Illustrated",
+  "Photorealistic",
+  "3D",
 ] as const;
 
 export type CoverStyle = (typeof COVER_STYLES)[number];
@@ -131,6 +136,18 @@ export type ClaimKind =
   | "later-scholarly-interpretation"
   | "contested-uncertain";
 
+export type SourceType =
+  | "primary"
+  | "secondary"
+  | "archive"
+  | "encyclopedia"
+  | "legal"
+  | "scholarly"
+  | "official"
+  | "other";
+
+export type SourceVerificationStatus = "verified" | "needs_review" | "unverified" | "rejected";
+
 export interface SourceRecord {
   id: number;
   title: string;
@@ -151,6 +168,15 @@ export interface SourceRecord {
   primarySource?: boolean;
   academicSource?: boolean;
   reasonForInclusion?: string;
+  author?: string;
+  year?: string;
+  publisher?: string;
+  sourceType?: SourceType;
+  identifier?: string;
+  relevantChapter?: string;
+  claimSupported?: string;
+  verificationStatus?: SourceVerificationStatus;
+  reliabilityNote?: string;
 }
 
 export interface RejectedSource {
@@ -207,7 +233,20 @@ export interface QuizItem {
   sourceIds: number[];
 }
 
+export type ChapterImageType =
+  | "photograph"
+  | "portrait"
+  | "map"
+  | "timeline"
+  | "diagram"
+  | "infographic"
+  | "document"
+  | "manuscript"
+  | "comparison"
+  | "illustration";
+
 export interface ChapterImage {
+  id?: string;
   url: string;
   localPath?: string;
   caption: string;
@@ -215,6 +254,11 @@ export interface ChapterImage {
   alt: string;
   license: string;
   sourceUrl: string;
+  imageType?: ChapterImageType;
+  verifiedHistoricalPhoto?: boolean;
+  chapterIndex?: number;
+  figureLabel?: string;
+  placement?: "after-intro" | "mid" | "end" | "inline";
 }
 
 export interface Chapter {
@@ -257,14 +301,21 @@ export interface FactFlag {
 
 export interface OutlineItem {
   id: string;
+  chapterNumber?: number;
   title: string;
   summary: string;
   purpose?: string;
+  historicalScope?: string;
+  researchQuestion?: string;
   researchQuestions?: string[];
   keyTopics?: string[];
   evidence?: string[];
   importantClaims?: string[];
+  claimsToVerify?: string[];
   uncertaintyNotes?: string;
+  primarySources?: string[];
+  secondarySources?: string[];
+  evidenceVsInterpretation?: string;
   sourceIds: number[];
   children?: { title: string; summary: string }[];
 }
@@ -333,6 +384,7 @@ export interface EbookSettings {
   coverStyle: CoverStyle;
   subtitle?: string;
   researchQuestions?: string[];
+  historicalPeriod?: string;
 }
 
 export interface GlossaryEntry {

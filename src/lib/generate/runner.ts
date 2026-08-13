@@ -2,6 +2,7 @@ import path from "path";
 import { analyzeTopic, detectVagueness } from "./analyze";
 import { buildOutlineFromResearch, runResearch } from "../research/pipeline";
 import { writeChapter, writeFrontMatter, countWords, flagsFromFacts, maybeChapterImages, chapterPlain } from "./write";
+import { buildChapterVisuals, insertFiguresIntoChapter } from "./images";
 import { coverSvg, renderCoverPng } from "./cover";
 import { getEbook, updateEbook, saveChapter, updateJob } from "../ebooks";
 import type { Chapter, EbookDocument, OutlineItem } from "../types";
@@ -10,9 +11,25 @@ import { documentNeedsHindiRegen, ensureHindiChapter, localizeOutline } from "./
 import { friendlyError } from "../errors";
 
 const running = new Map<string, Promise<void>>();
+const cancelled = new Set<string>();
 
-export function startGeneration(ebookId: string, jobId: string, opts: { resume?: boolean; skipOutlineWait?: boolean } = {}) {
+export function cancelGeneration(ebookId: string) {
+  cancelled.add(ebookId);
+}
+
+export function consumeCancel(ebookId: string) {
+  const hit = cancelled.has(ebookId);
+  cancelled.delete(ebookId);
+  return hit;
+}
+
+export function startGeneration(
+  ebookId: string,
+  jobId: string,
+  opts: { resume?: boolean; skipOutlineWait?: boolean; forceOutline?: boolean } = {}
+) {
   if (running.has(ebookId)) return;
+  cancelled.delete(ebookId);
   const p = generateEbook(ebookId, jobId, opts)
     .catch((err) => {
       console.error("Generation failed", err);
@@ -42,7 +59,11 @@ export function isRunning(ebookId: string) {
   return running.has(ebookId);
 }
 
-async function generateEbook(ebookId: string, jobId: string, opts: { resume?: boolean; skipOutlineWait?: boolean }) {
+async function generateEbook(
+  ebookId: string,
+  jobId: string,
+  opts: { resume?: boolean; skipOutlineWait?: boolean; forceOutline?: boolean }
+) {
   const doc = getEbook(ebookId);
   if (!doc) throw new Error("Ebook not found");
 
@@ -110,10 +131,20 @@ async function generateEbook(ebookId: string, jobId: string, opts: { resume?: bo
 
   progress("outlining", 38, "Creating ebook structure...", "outlining");
 
+  if (consumeCancel(ebookId)) {
+    updateEbook(ebookId, {
+      status: "paused",
+      progress: { step: "paused", percent: 20, message: "Research cancelled. Your ebook data has been saved." },
+    });
+    updateJob(jobId, { status: "paused", message: "Cancelled" });
+    return;
+  }
+
   const syllabus = doc.syllabus?.detected ? doc.syllabus : bundle.syllabusFromWeb;
-  const rawOutline = doc.outline.length
-    ? doc.outline
-    : buildOutlineFromResearch(doc.settings, analysis, bundle, syllabus);
+  const rawOutline =
+    doc.outline.length && !opts.forceOutline
+      ? doc.outline
+      : buildOutlineFromResearch(doc.settings, analysis, bundle, syllabus);
   const outline = localizeOutline(rawOutline, outputLanguage);
 
   const blocked = bundle.researchQuality?.generationBlocked || bundle.insufficient;
@@ -296,19 +327,38 @@ async function writeChapters(doc: EbookDocument, jobId: string, bundle: any, sta
       lastChapterIndex: i - 1,
     });
 
-    let extraImages = bundle.images || [];
+    if (consumeCancel(doc.id)) {
+      updateEbook(doc.id, {
+        status: "paused",
+        chapters,
+        progress: { step: "paused", percent: 50, message: "Writing cancelled. Completed chapters were saved." },
+      });
+      updateJob(jobId, { status: "paused", message: "Cancelled", lastChapterIndex: i - 1 });
+      return;
+    }
+
+    let extraImages = i === 0 ? bundle.images || [] : [];
     if (doc.settings.includeImages && (!extraImages.length || i > 0)) {
       extraImages = await maybeChapterImages(`${doc.title} ${item.title}`, true);
     }
+    const visuals = await buildChapterVisuals({
+      ebookId: doc.id,
+      chapterIndex: i,
+      item,
+      lang: doc.analysis.outputLanguage || doc.language,
+      commons: extraImages,
+      includeImages: Boolean(doc.settings.includeImages),
+    });
 
     const ch = await writeChapter({
       index: i,
       item,
       settings: doc.settings,
       analysis: doc.analysis,
-      bundle: { ...bundle, images: extraImages },
+      bundle: { ...bundle, images: visuals },
       total: outline.length,
     });
+    insertFiguresIntoChapter(ch, doc.analysis.outputLanguage || doc.language);
     ch.factFlags = flagsFromFacts(bundle.facts || [], chapterPlain(ch));
     chapters[i] = ch;
     saveChapter(doc.id, ch);
@@ -409,11 +459,45 @@ export async function regenerateChapter(ebookId: string, chapterIndex: number, i
   const chapters = doc.chapters.slice();
   chapters[chapterIndex] = ch;
   saveChapter(ebookId, ch);
+  insertFiguresIntoChapter(ch, doc.analysis.outputLanguage || doc.language);
   updateEbook(ebookId, {
     chapters,
     wordCount: chapters.reduce((n, c) => n + (c?.wordCount || 0), 0),
   });
   return ch;
+}
+
+export function regenerateOutlineForEbook(ebookId: string) {
+  const doc = getEbook(ebookId);
+  if (!doc) throw new Error("Ebook not found");
+  if (!doc.analysis) throw new Error("Research the topic first.");
+  const bundle = {
+    sources: doc.sources,
+    rejectedSources: doc.rejectedSources || [],
+    researchQuality: doc.researchQuality || {
+      relevantCount: doc.sources.length,
+      rejectedCount: (doc.rejectedSources || []).length,
+      generationBlocked: false,
+      approved: [],
+      rejected: [],
+    },
+    facts: doc.facts || [],
+    wikiPages: [],
+    images: [],
+    insufficient: false,
+    profile: undefined,
+  };
+  const outline = localizeOutline(
+    buildOutlineFromResearch(doc.settings, doc.analysis, bundle as any, doc.syllabus),
+    doc.outputLanguage || doc.language
+  );
+  updateEbook(ebookId, {
+    outline,
+    chapterCount: outline.length,
+    lastCompletedStage: "outline",
+    status: doc.status === "draft" ? "awaiting_outline" : doc.status,
+  });
+  return getEbook(ebookId);
 }
 
 

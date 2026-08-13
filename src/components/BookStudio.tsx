@@ -49,7 +49,10 @@ const TABS: { id: StudioTab; label: string }[] = [
 
 export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }) {
   const router = useRouter();
-  const { doc, setDoc, error, setError, saveState, busy, setBusy, load, patch, autosaveSettings } = useEbook(ebookId);
+  const { doc, setDoc, error, setError, saveState, busy, setBusy, load, patch, autosaveSettings, loading, loadState } =
+    useEbook(ebookId);
+  const [sourceFilter, setSourceFilter] = useState("");
+  const [coverBusy, setCoverBusy] = useState(false);
   const [chIndex, setChIndex] = useState(0);
   const [flags, setFlags] = useState<FactFlag[]>([]);
   const [flagSummary, setFlagSummary] = useState<any>(null);
@@ -244,7 +247,9 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <p className="stamp text-gold-500">ebookId · {ebookId}</p>
-          <h1 className="font-display mt-3 text-3xl">{doc?.title || "Opening…"}</h1>
+          <h1 className="font-display mt-3 text-3xl">
+            {doc?.title || (loadState === "error" ? "Could not open ebook" : loading ? "Loading ebook…" : "Ebook")}
+          </h1>
           <p className="mt-1 text-sm text-ink-400">
             {doc ? `${doc.outputLanguage || doc.language} · ${doc.type} · ${displayStatus(doc.status)} · ${doc.wordCount.toLocaleString()} words` : ""}
           </p>
@@ -310,7 +315,25 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
         ))}
       </div>
 
-      {!doc && <p className="mt-8 text-ink-400">Loading ebook {ebookId}…</p>}
+      {!doc && loadState === "loading" && (
+        <div className="mt-8 space-y-3">
+          <p className="text-ink-400">Loading ebook {ebookId}…</p>
+          <p className="text-xs text-ink-300">If this takes more than a few seconds, the request may have failed.</p>
+        </div>
+      )}
+      {!doc && loadState === "error" && (
+        <div className="mt-8 paper-card rounded-2xl p-6">
+          <p className="text-unsupported">{error || "That ebook could not be loaded."}</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <button className="btn-gold" onClick={() => load().catch(() => {})}>
+              Retry
+            </button>
+            <Link href="/ebooks" className="btn-ghost">
+              Back to Library
+            </Link>
+          </div>
+        </div>
+      )}
 
       {doc && tab === "cover" && (
         <div className="mt-6 grid gap-6 md:grid-cols-[280px_1fr]">
@@ -324,8 +347,41 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
             <p className="text-sm text-ink-400">
               Cover uses the saved title, subtitle, author, and book type. Hindi titles render with Devanagari.
             </p>
-            <button className="btn-line" onClick={() => patch({ title: doc.title, subtitle: doc.subtitle, regenerateCover: true })}>
-              Regenerate cover
+            <label className="block text-sm">
+              <span className="mb-1.5 block text-ink-400">Cover style</span>
+              <select
+                className="field"
+                value={doc.settings.coverStyle}
+                onChange={(e) => autosaveSettings({ ...doc.settings, coverStyle: e.target.value as any })}
+              >
+                {["Minimal", "Academic", "Modern", "Professional", "Creative", "Technical", "Textbook", "Historical", "Documentary", "Illustrated", "Photorealistic", "3D"].map(
+                  (s) => (
+                    <option key={s}>{s}</option>
+                  )
+                )}
+              </select>
+            </label>
+            <button
+              className="btn-line"
+              disabled={coverBusy}
+              onClick={async () => {
+                setCoverBusy(true);
+                setError("");
+                try {
+                  await patch({
+                    title: doc.title,
+                    subtitle: doc.subtitle,
+                    coverStyle: doc.settings.coverStyle,
+                    regenerateCover: true,
+                  });
+                } catch (e: any) {
+                  setError(e.message);
+                } finally {
+                  setCoverBusy(false);
+                }
+              }}
+            >
+              {coverBusy ? "Saving cover…" : "Regenerate cover"}
             </button>
           </div>
         </div>
@@ -407,10 +463,34 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
                 {doc.researchQuality?.contaminationReason || "Not enough reliable sources were found."}
               </p>
             )}
-            <div className="mt-4 flex gap-2">
+            {doc.status === "failed" && (
+              <p className="mt-3 text-sm text-unsupported">{doc.error || "Research failed. Retry without creating a new ebook."}</p>
+            )}
+            {["awaiting_outline", "complete"].includes(doc.status) && !writingBlocked && (
+              <p className="mt-3 text-sm text-verified">Research complete for this ebookId. Sources and outline are saved.</p>
+            )}
+            <div className="mt-4 flex flex-wrap gap-2">
               <button className="btn-gold" disabled={!!busy} onClick={startResearch}>
-                Re-run research
+                {busy === "research" ? "Starting…" : generating ? "Research running…" : "Re-run research"}
               </button>
+              {generating && (
+                <button
+                  className="btn-ghost"
+                  onClick={async () => {
+                    setBusy("cancel");
+                    try {
+                      await api(`/api/ebooks/${ebookId}/research`, { method: "POST", body: JSON.stringify({ action: "cancel" }) });
+                      await load();
+                    } catch (e: any) {
+                      setError(e.message);
+                    } finally {
+                      setBusy("");
+                    }
+                  }}
+                >
+                  Cancel
+                </button>
+              )}
               <button className="btn-ghost" onClick={() => go("outline")}>
                 Review outline
               </button>
@@ -431,17 +511,91 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
         <section className="mt-6 grid gap-5 lg:grid-cols-2">
           <div className="paper-card rounded-2xl p-5">
             <h3 className="font-display text-lg">Approved sources</h3>
+            <input
+              className="field mt-3"
+              placeholder="Search / filter sources"
+              value={sourceFilter}
+              onChange={(e) => setSourceFilter(e.target.value)}
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                className="btn-ghost !py-1.5"
+                disabled={!!busy}
+                onClick={async () => {
+                  setBusy("refresh-sources");
+                  try {
+                    await api(`/api/ebooks/${ebookId}/sources`, { method: "POST", body: JSON.stringify({ action: "refresh" }) });
+                    await load();
+                  } catch (e: any) {
+                    setError(e.message);
+                  } finally {
+                    setBusy("");
+                  }
+                }}
+              >
+                Refresh Sources
+              </button>
+              <button
+                className="btn-ghost !py-1.5"
+                disabled={!!busy}
+                onClick={async () => {
+                  setBusy("regen-sources");
+                  setError("");
+                  try {
+                    await api(`/api/ebooks/${ebookId}/sources`, { method: "POST", body: JSON.stringify({ action: "regenerate" }) });
+                    router.push(`/ebooks/${ebookId}/research`);
+                  } catch (e: any) {
+                    setError(e.message);
+                  } finally {
+                    setBusy("");
+                  }
+                }}
+              >
+                {busy === "regen-sources" ? "Starting…" : "Regenerate Sources"}
+              </button>
+            </div>
             <ol className="mt-3 max-h-[28rem] space-y-2 overflow-auto text-sm">
-              {doc.sources.map((s) => (
+              {doc.sources
+                .filter((s) =>
+                  `${s.title} ${s.author || ""} ${s.organization} ${s.url}`.toLowerCase().includes(sourceFilter.toLowerCase())
+                )
+                .map((s) => (
                 <li key={s.id} className="border-b border-paper-300 pb-2">
                   <span className="text-gold-500">[{s.id}]</span>{" "}
                   <a href={s.url} target="_blank" rel="noreferrer" className="underline">
                     {s.title}
                   </a>
                   <p className="text-ink-400">
-                    {s.organization} · rel {s.relevanceScore ?? "—"} · auth {s.authorityScore ?? "—"}
-                    {s.primarySource ? " · primary" : ""} {s.academicSource ? " · academic" : ""}
+                    {s.author || s.organization}
+                    {s.year ? ` · ${s.year}` : ""}
+                    {s.publisher ? ` · ${s.publisher}` : ""}
+                    {s.sourceType ? ` · ${s.sourceType}` : ""}
+                    {s.verificationStatus ? ` · ${s.verificationStatus}` : ""}
                   </p>
+                  {s.reliabilityNote && <p className="text-xs text-ink-300">{s.reliabilityNote}</p>}
+                  {s.claimSupported && <p className="text-xs">Claim: {s.claimSupported}</p>}
+                  <div className="mt-1 flex gap-2">
+                    <a className="underline text-xs" href={s.url} target="_blank" rel="noreferrer">
+                      Open Source
+                    </a>
+                    <button
+                      className="text-xs text-unsupported underline"
+                      type="button"
+                      onClick={async () => {
+                        setBusy(`rm-${s.id}`);
+                        try {
+                          await api(`/api/ebooks/${ebookId}/sources?sourceId=${s.id}`, { method: "DELETE" });
+                          await load();
+                        } catch (e: any) {
+                          setError(e.message);
+                        } finally {
+                          setBusy("");
+                        }
+                      }}
+                    >
+                      Remove Source
+                    </button>
+                  </div>
                 </li>
               ))}
             </ol>
@@ -525,6 +679,47 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
               <button key={action} disabled={!!busy} className="btn-ghost w-full !justify-start capitalize" onClick={() => chapterAction(action)}>
                 {busy === action ? "Working…" : action}
               </button>
+            ))}
+            <p className="pt-3 text-xs uppercase tracking-[0.14em] text-gold-500">+ चित्र जोड़ें</p>
+            {[
+              ["verified", "सत्यापित स्रोत से चित्र"],
+              ["illustration", "व्याख्यात्मक चित्रण बनाएं"],
+              ["map", "मानचित्र"],
+              ["timeline", "टाइमलाइन"],
+              ["infographic", "इन्फोग्राफिक"],
+              ["comparison", "तुलना चित्र"],
+            ].map(([kind, label]) => (
+              <button
+                key={kind}
+                disabled={!!busy}
+                className="btn-ghost w-full !justify-start"
+                onClick={() => chapterAction("add-image", { imageKind: kind })}
+              >
+                {busy === "add-image" ? "Adding…" : label}
+              </button>
+            ))}
+            {(chapter.images || []).map((img) => (
+              <div key={img.id || img.url} className="rounded-lg border border-paper-300 p-2 text-xs">
+                <p className="font-semibold">{img.figureLabel || img.caption}</p>
+                <input
+                  className="field !py-1 mt-1"
+                  value={img.caption}
+                  onChange={(e) => {
+                    const chapters = doc.chapters.map((c, i) =>
+                      i === chIndex
+                        ? { ...c, images: c.images.map((x) => (x.url === img.url ? { ...x, caption: e.target.value } : x)) }
+                        : c
+                    );
+                    setDoc({ ...doc, chapters });
+                  }}
+                  onBlur={() =>
+                    chapterAction("update-image", { imageId: img.id, url: img.url, caption: img.caption, credit: img.credit, alt: img.alt })
+                  }
+                />
+                <button className="mt-1 underline text-unsupported" onClick={() => chapterAction("remove-image", { imageId: img.id, url: img.url })}>
+                  चित्र हटाएँ
+                </button>
+              </div>
             ))}
             <div className="flex gap-2 pt-2">
               <button className="btn-ghost flex-1" disabled={chIndex === 0} onClick={() => setChIndex((i) => i - 1)}>
