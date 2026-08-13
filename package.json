@@ -10,6 +10,7 @@
     "lint": "next lint",
     "test:relevance": "npx --yes tsx src/lib/research/relevance-selftest.ts",
     "test:upgrade": "npx --yes tsx src/lib/ebook-selftest.ts",
+    "test:flow": "npx --yes tsx src/lib/folio-flow-selftest.ts",
     "postinstall": "node scripts/ensure-dirs.js && node scripts/seed-corpus.mjs"
   },
   "dependencies": {

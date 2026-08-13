@@ -15,9 +15,8 @@ export default function EbookHubPage() {
     setLoading(true);
     setError("");
     try {
-      await ensureSession();
       const data = await Promise.race([
-        api(`/api/ebooks/${ebookId}`),
+        ensureSession().then(() => api(`/api/ebooks/${ebookId}`)),
         new Promise<never>((_, reject) => setTimeout(() => reject(new Error("Timed out while opening this ebook. Please retry.")), 15000)),
       ]);
       const status = data.ebook?.status;

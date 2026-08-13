@@ -24,6 +24,7 @@ import {
   composeHindiChapter,
   composeHindiFrontMatter,
   ensureHindiChapter,
+  evidenceTableHtml,
   hindiWriterPromptAddon,
   localizeTitle,
 } from "./hindi";
@@ -80,6 +81,13 @@ function notesForChapter(
       paras.push(`SOURCE [${s.id}] ${s.title}:\n${s.extractedText.slice(0, 1600)}`);
     }
   }
+
+  if (item.researchQuestion) {
+    paras.unshift(`RESEARCH QUESTION: ${item.researchQuestion}`);
+  }
+  if (item.historicalScope) paras.unshift(`HISTORICAL SCOPE: ${item.historicalScope}`);
+  if (item.evidenceVsInterpretation) paras.push(`EVIDENCE VS INTERPRETATION:\n${item.evidenceVsInterpretation}`);
+  if ((item.claimsToVerify || []).length) paras.push(`CLAIMS TO VERIFY:\n${(item.claimsToVerify || []).join("\n")}`);
 
   if (paras.length < 2) {
     for (const s of bundle.sources.filter((x) => x.extractedText.length > 200).slice(0, 3)) {
@@ -477,11 +485,26 @@ function buildSections(
   const labels = labelsFor(analysis.outputLanguage);
   const sections: ChapterSection[] = [];
 
+  if (item.researchQuestion) {
+    sections.push({
+      id: nanoid(8),
+      heading: analysis.outputLanguage === "hi" ? "शोध प्रश्न" : "Research question",
+      html: `<p><strong>${escapeHtml(item.researchQuestion)}</strong></p>${
+        item.historicalScope ? `<p>${escapeHtml(item.historicalScope)}</p>` : ""
+      }`,
+      sourceIds: [],
+    });
+  }
+
   if (profile?.claimDiscipline === "historical-hypothesis") {
     sections.push({
       id: nanoid(8),
-      heading: "How to read claims in this chapter",
-      html: `<p>Major historical statements below are classified as <strong>primary-source evidence</strong>, <strong>the author's interpretation</strong>, <strong>later scholarly interpretation</strong>, or <strong>contested/uncertain</strong>. Ambedkar's hypotheses — including the Broken Men theory and the beef-eating explanation — are not presented as universally established facts.</p>`,
+      heading: analysis.outputLanguage === "hi" ? "दावों को कैसे पढ़ें" : "How to read claims in this chapter",
+      html: `<p>${
+        analysis.outputLanguage === "hi"
+          ? "नीचे के महत्त्वपूर्ण ऐतिहासिक कथनों को स्थापित साक्ष्य, विद्वत् व्याख्या, लेखक की व्याख्या, या विवादास्पद/अनिश्चित के रूप में वर्गीकृत किया गया है। Broken Men, गोमांस/Beef-eating, बौद्ध धर्म और अस्पृश्यता के उद्भव संबंधी दावे आंबेडकर की व्याख्या/परिकल्पना हैं जब तक स्वतंत्र साक्ष्य न हो।"
+          : "Major historical statements below are classified as primary-source evidence, scholarly interpretation, the author's interpretation, or contested/uncertain. Broken Men, beef-eating, Buddhism–Brahmanism, and the origin of untouchability are Ambedkar's arguments or hypotheses unless independent evidence is cited."
+      }</p>${evidenceTableHtml(item.evidenceVsInterpretation, analysis.outputLanguage)}`,
       sourceIds: [],
     });
   }

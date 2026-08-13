@@ -48,7 +48,7 @@ import type {
   RejectedSource,
   ResearchQualityReport,
 } from "../types";
-import { nowIso, nextSourceId } from "../db";
+import { nowIso } from "../db";
 import { addResearch, replaceSources } from "../ebooks";
 import { isHindiOutput } from "../language";
 import { HINDI_OUTLINE_TEMPLATES, localizeOutline } from "../generate/hindi";
@@ -61,6 +61,8 @@ import {
   plannedToOutlineItems,
 } from "../generate/outline";
 import { probeLiveWeb } from "./liveweb";
+import { finalizeSourceRecord, isHttpUrl } from "./citation";
+import { researchOutlineChapters } from "./chapters";
 
 export interface ResearchBundle {
   sources: SourceRecord[];
@@ -619,25 +621,25 @@ function persistResearch(ebookId: string, query: string, hits: RawHit[]) {
 }
 
 function persistSources(ebookId: string, sources: SourceRecord[]) {
-  for (const s of sources) {
-    if (!s.id) s.id = nextSourceId();
+  const prepared = sources.map((s, i) => {
+    if (!s.id) s.id = i + 1;
     enrichSourceMetadata(s);
-  }
-  replaceSources(
-    ebookId,
-    sources.map((s) => ({ ...s, extractedText: (s.extractedText || "").slice(0, 20000) }))
-  );
+    const finalized = finalizeSourceRecord(s, s.chapterIds);
+    return { ...finalized, extractedText: (finalized.extractedText || "").slice(0, 20000) };
+  });
+  replaceSources(ebookId, prepared);
 }
 
 function enrichSourceMetadata(s: SourceRecord) {
-  const year = s.year || s.publishedAt?.slice(0, 4) || (s.extractedText || s.snippet || "").match(/\b(1[6-9]\d{2}|20[0-2]\d)\b/)?.[1];
-  if (year) s.year = year;
+  const year = s.year || s.publishedAt?.slice(0, 4) || undefined;
+  if (year && /^\d{4}$/.test(year)) s.year = year;
   if (!s.author) {
-    const by = `${s.title} ${s.snippet}`.match(/\b(?:by|By)\s+([A-Z][A-Za-z.]+(?:\s+[A-Z][A-Za-z.]+){0,3})/);
-    if (by) s.author = by[1];
-    else if (/ambedkar/i.test(`${s.title} ${s.url}`)) s.author = "B. R. Ambedkar";
+    if (/ambedkar/i.test(`${s.title} ${s.url}`) && /untouchable|अछूत|writings and speeches/i.test(`${s.title} ${s.url}`)) {
+      s.author = "B. R. Ambedkar";
+    }
   }
   if (!s.publisher) s.publisher = s.organization;
+  if (!s.publication) s.publication = s.publisher || s.organization;
   if (!s.sourceType) {
     s.sourceType = s.primarySource
       ? /legislative|constitution|gazette/.test(s.url + s.title.toLowerCase())
@@ -653,14 +655,14 @@ function enrichSourceMetadata(s: SourceRecord) {
             ? "official"
             : "secondary";
   }
-  if (!s.verificationStatus) {
-    s.verificationStatus = s.used && (s.relevanceScore || 0) >= 70 ? "verified" : "needs_review";
+  if (!isHttpUrl(s.url)) {
+    s.url = "";
+    s.verificationStatus = "unverified";
   }
-  if (!s.reliabilityNote) {
-    s.reliabilityNote = s.reasonForInclusion || (s.primarySource ? "Primary / official record" : "Secondary source — check against primary texts");
-  }
-  if (!s.identifier) s.identifier = s.url;
+  if (!s.identifier && s.url) s.identifier = s.url;
 }
+
+export { researchOutlineChapters };
 
 async function maybeFindSyllabus(
   topic: string,

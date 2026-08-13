@@ -3,7 +3,7 @@ import { nowIso, nextSourceId } from "@/lib/db";
 import { extractReadable } from "@/lib/research/extract";
 import { organizationFromDomain, sourceTier } from "@/lib/research/rank";
 import { buildTopicProfile, evaluateCandidate, MIN_RELEVANCE } from "@/lib/research/relevance";
-import { isRunning, startGeneration } from "@/lib/generate/runner";
+import { isRunning, startResearch } from "@/lib/generate/runner";
 import { requireUser, json, bad, limit } from "@/lib/api";
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
@@ -69,7 +69,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       });
     }
     const job = createJob(ebook.id, auth.user.id, "research");
-    startGeneration(ebook.id, job.id, { skipOutlineWait: false, forceOutline: false });
+    startResearch(ebook.id, job.id, { forceOutline: false, replaceSources: true });
     return json({ jobId: job.id, ebookId: ebook.id, status: "started" });
   }
 
@@ -95,7 +95,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     return bad(ev.rejectionReason || "Source is not semantically relevant to this ebook topic.", 422);
   }
   const sourceId = nextSourceId();
-  addSourceRow(ebook.id, {
+  const { finalizeSourceRecord } = await import("@/lib/research/citation");
+  addSourceRow(ebook.id, finalizeSourceRecord({
     id: sourceId,
     title: readable.title,
     organization: organizationFromDomain(url),
@@ -117,7 +118,7 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     identifier: url,
     verificationStatus: "verified",
     reliabilityNote: ev.reasonForInclusion,
-  });
+  }));
   const fresh = getEbook(ebook.id, auth.user.id)!;
   return json({ ebook: clientEbook(fresh), sourceId });
 }

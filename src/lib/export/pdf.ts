@@ -296,16 +296,24 @@ function writeChapter(
     pdf.moveDown(0.6);
   }
 
-  for (const img of ch.images.slice(0, 2)) {
-    if (img.localPath && fs.existsSync(img.localPath)) {
+  for (const img of ch.images.slice(0, 3)) {
+    const raster = rasterizeForPdf(img.localPath);
+    if (raster) {
       try {
-        pdf.image(img.localPath, { fit: [440, 260], align: "center" });
-        pdf.font(BODY).fontSize(8).fillColor("#6B5E52").text(img.caption);
+        ensureSpace(pdf, 220);
+        pdf.image(raster, { fit: [440, 240], align: "center" });
+        pdf.font(BODY).fontSize(8).fillColor("#6B5E52").text(img.figureLabel || img.caption);
         pdf.text(img.credit);
+        if (img.verifiedHistoricalPhoto === false) {
+          pdf.text("व्याख्यात्मक चित्र — यह ऐतिहासिक फोटोग्राफ नहीं है।");
+        }
         pdf.moveDown(0.5);
       } catch {
-        /* skip */
+        pdf.font(BODY).fontSize(8).fillColor("#6B5E52").text(`${img.figureLabel || img.caption} — ${img.credit}`);
       }
+    } else {
+      pdf.font(BODY).fontSize(8).fillColor("#6B5E52").text(`${img.figureLabel || img.caption} — ${img.credit}`);
+      pdf.moveDown(0.3);
     }
   }
 
@@ -400,6 +408,16 @@ function ensureSpace(pdf: PDFKit.PDFDocument, min: number) {
 
 function strip(s: string) {
   return s.replace(/<[^>]+>/g, "");
+}
+
+function rasterizeForPdf(localPath?: string): string | null {
+  if (!localPath || !fs.existsSync(localPath)) return null;
+  if (/\.(png|jpe?g)$/i.test(localPath)) return localPath;
+  if (localPath.endsWith(".svg")) {
+    const png = localPath.replace(/\.svg$/i, ".png");
+    if (fs.existsSync(png)) return png;
+  }
+  return null;
 }
 
 function sortSources(sources: SourceRecord[], used: Set<number>) {

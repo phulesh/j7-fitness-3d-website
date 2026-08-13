@@ -177,6 +177,38 @@ export interface SourceRecord {
   claimSupported?: string;
   verificationStatus?: SourceVerificationStatus;
   reliabilityNote?: string;
+  publication?: string;
+  citation?: string;
+  chapterIds?: string[];
+  notes?: string;
+}
+
+export type ResearchRunStatus = "idle" | "running" | "success" | "error" | "cancelled";
+
+export interface ChapterResearchRecord {
+  chapterId: string;
+  chapterIndex: number;
+  title: string;
+  status: "pending" | "running" | "complete" | "failed";
+  sourcesFound: number;
+  sourceIds: number[];
+  notes: string;
+  evidenceNotes?: string;
+  researchQuestion?: string;
+  facts: ExtractedFact[];
+}
+
+export interface ResearchRunState {
+  status: ResearchRunStatus;
+  startedAt?: string;
+  finishedAt?: string;
+  currentChapter?: number;
+  currentChapterTitle?: string;
+  percent: number;
+  sourcesFound: number;
+  message: string;
+  detail?: string;
+  error?: string;
 }
 
 export interface RejectedSource {
@@ -447,6 +479,8 @@ export interface EbookDocument {
   sources: SourceRecord[];
   rejectedSources?: RejectedSource[];
   researchQuality?: ResearchQualityReport;
+  chapterResearch?: ChapterResearchRecord[];
+  researchRun?: ResearchRunState;
   facts: ExtractedFact[];
   cover: {
     style: CoverStyle;
@@ -489,7 +523,7 @@ export interface GenerationJob {
   ebookId: string;
   userId: string;
   kind?: "research" | "generate" | "factcheck" | "export";
-  status: "queued" | "running" | "complete" | "failed" | "paused";
+  status: "queued" | "running" | "complete" | "failed" | "paused" | "cancelled";
   step: string;
   percent: number;
   message: string;

@@ -79,12 +79,14 @@ export function ReadingView({ doc, initialChapter = 0 }: { doc: EbookDocument; i
               <p className="mt-2">{chapter.summary}</p>
             </section>
           )}
-          {chapter.images.map((img) => (
-            <figure key={img.sourceUrl} className="mt-6">
+          {!chapter.sections.some((s) => /ebook-figure/.test(s.html)) &&
+            chapter.images.map((img) => (
+            <figure key={img.id || img.sourceUrl || img.url} className="ebook-figure mt-6">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={img.url} alt={img.alt} className="max-h-72 rounded-lg object-cover" loading="lazy" />
+              <img src={img.url} alt={img.alt || img.caption} className="max-h-80 w-full rounded-lg object-contain" loading="lazy" />
               <figcaption className="mt-1 text-xs text-ink-400">
-                {img.caption} — {img.credit} ({img.license})
+                <strong>{img.figureLabel || img.caption}</strong> — {img.credit}
+                {img.verifiedHistoricalPhoto === false ? " — व्याख्यात्मक चित्र — यह ऐतिहासिक फोटोग्राफ नहीं है।" : ""}
               </figcaption>
             </figure>
           ))}

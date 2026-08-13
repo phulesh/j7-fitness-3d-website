@@ -14,6 +14,7 @@ data/folio.json.tmp
 data/uploads/**
 data/exports/**
 data/covers/**
+data/images/**
 !data/uploads/.gitkeep
 !data/exports/.gitkeep
 !data/covers/.gitkeep

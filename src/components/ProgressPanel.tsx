@@ -1,12 +1,12 @@
 "use client";
 
 const STEPS = [
-  { key: "analyzing", label: "Researching topic..." },
-  { key: "researching", label: "Finding reliable sources..." },
-  { key: "outlining", label: "Creating ebook structure..." },
-  { key: "writing", label: "Writing chapters..." },
-  { key: "fact_checking", label: "Fact checking..." },
-  { key: "complete", label: "Preparing download..." },
+  { key: "analyzing", label: "शोध शुरू हो रहा है…" },
+  { key: "researching", label: "विश्वसनीय स्रोत खोजे जा रहे हैं…" },
+  { key: "outlining", label: "अध्याय-रूपरेखा बन रही है…" },
+  { key: "writing", label: "अध्याय लिखे जा रहे हैं…" },
+  { key: "fact_checking", label: "तथ्यों की जाँच हो रही है…" },
+  { key: "complete", label: "डाउनलोड तैयार हो रहा है…" },
 ];
 
 export function ProgressPanel({

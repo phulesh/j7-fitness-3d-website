@@ -290,6 +290,22 @@ export function Book3D({
         </Canvas>
       </div>
       <p className="sr-only">3D book for ebook {ebookId}</p>
+      <PageFigures pages={pages} leaf={leaf} />
+    </div>
+  );
+}
+
+function PageFigures({ pages, leaf }: { pages: BookPage[]; leaf: number }) {
+  const current = [pages[leaf], pages[leaf + 1]].filter(Boolean);
+  const html = current.map((p) => p.html).join("\n");
+  const srcs = [...html.matchAll(/<img[^>]+src="([^"]+)"/g)].map((m) => m[1]);
+  if (!srcs.length) return null;
+  return (
+    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+      {srcs.slice(0, 4).map((src) => (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img key={src} src={src} alt="" className="max-h-48 w-full rounded-lg object-contain bg-paper-50" />
+      ))}
     </div>
   );
 }

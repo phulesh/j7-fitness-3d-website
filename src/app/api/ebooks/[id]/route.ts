@@ -84,18 +84,25 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     (patch.settings as any).coverStyle = body.coverStyle;
   }
   if (body.regenerateCover || body.coverStyle || body.title || body.subtitle || body.authorName) {
+    const { coverAuthor } = await import("@/lib/generate/cover");
     const settings = (patch.settings as typeof ebook.settings) || ebook.settings;
-    const title = (patch.title as string) || ebook.title;
+    const title = (patch.title as string) || ebook.customTitle || ebook.title;
     const subtitle = (patch.subtitle as string) || ebook.subtitle;
     const svg = coverSvg({
       title,
       subtitle,
-      author: settings.includeAuthor ? settings.authorName || "Folio Research" : "",
+      author: coverAuthor(settings),
       style: body.coverStyle || settings.coverStyle,
-      language: ebook.language,
+      language: ebook.outputLanguage || ebook.language,
       category: ebook.analysis?.category || "general",
     });
-    patch.cover = { style: body.coverStyle || settings.coverStyle, svg, pngPath: ebook.cover?.pngPath };
+    let pngPath = ebook.cover?.pngPath;
+    try {
+      pngPath = await renderCoverPng(svg, path.join(process.cwd(), "data", "covers", `${ebook.id}.png`));
+    } catch (e) {
+      console.error("cover png", e);
+    }
+    patch.cover = { style: body.coverStyle || settings.coverStyle, svg, pngPath };
   }
 
   const next = updateEbook(ebook.id, patch as any);

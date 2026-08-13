@@ -237,7 +237,10 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
     }
   }
 
-  const generating = doc && !["complete", "failed", "draft", "awaiting_outline", "paused"].includes(doc.status);
+  const generating =
+    (doc && !["complete", "failed", "draft", "awaiting_outline", "paused"].includes(doc.status)) ||
+    doc?.researchRun?.status === "running";
+  const researchState = doc?.researchRun?.status || (generating && doc?.status === "researching" ? "running" : doc?.sources.length ? "success" : "idle");
   const pages = useMemo(() => (doc ? buildBookPages(doc) : []), [doc]);
   const chapter = doc?.chapters?.[chIndex];
   const writingBlocked = Boolean(doc?.researchQuality?.generationBlocked);
@@ -368,20 +371,19 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
                 setCoverBusy(true);
                 setError("");
                 try {
-                  await patch({
-                    title: doc.title,
-                    subtitle: doc.subtitle,
-                    coverStyle: doc.settings.coverStyle,
-                    regenerateCover: true,
+                  const data = await api(`/api/ebooks/${ebookId}/cover`, {
+                    method: "POST",
+                    body: JSON.stringify({ style: doc.settings.coverStyle }),
                   });
+                  if (data.ebook) setDoc(data.ebook);
                 } catch (e: any) {
-                  setError(e.message);
+                  setError(e.message || "कवर तैयार नहीं हो सका। पुनः प्रयास करें।");
                 } finally {
                   setCoverBusy(false);
                 }
               }}
             >
-              {coverBusy ? "Saving cover…" : "Regenerate cover"}
+              {coverBusy ? "कवर तैयार किया जा रहा है…" : "Regenerate Cover"}
             </button>
           </div>
         </div>
@@ -454,8 +456,37 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
       {doc && tab === "research" && (
         <section className="mt-6 space-y-5">
           <div className="paper-card rounded-2xl p-5">
-            <h2 className="font-display text-xl">Research quality</h2>
-            <p className="mt-2">
+            <h2 className="font-display text-xl">Research</h2>
+            <p className="mt-1 text-xs uppercase tracking-[0.16em] text-gold-500">
+              ebookId · {ebookId} · {researchState}
+            </p>
+            <p className="mt-3 text-sm">
+              {doc.researchRun?.message ||
+                (researchState === "idle"
+                  ? "शोध अभी शुरू नहीं हुआ।"
+                  : researchState === "running"
+                    ? "शोध शुरू हो रहा है…"
+                    : researchState === "success"
+                      ? "शोध पूरा हुआ।"
+                      : researchState === "cancelled"
+                        ? "शोध रद्द किया गया।"
+                        : doc.error || "शोध पूरा नहीं हो सका। पुनः प्रयास करें।")}
+            </p>
+            {doc.researchRun?.currentChapterTitle && researchState === "running" && (
+              <p className="mt-2 text-sm text-ink-400">
+                अध्याय {(doc.researchRun.currentChapter || 0) + 1}: {doc.researchRun.currentChapterTitle}
+              </p>
+            )}
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-paper-300">
+              <div
+                className="h-full bg-ink-700 transition-all"
+                style={{ width: `${Math.min(100, doc.researchRun?.percent || doc.progress?.percent || 0)}%` }}
+              />
+            </div>
+            <p className="mt-2 text-sm">
+              {doc.researchRun?.percent || doc.progress?.percent || 0}% · {doc.researchRun?.sourcesFound ?? doc.sources.length} स्रोत
+            </p>
+            <p className="mt-2 text-sm">
               {doc.researchQuality?.relevantCount ?? doc.sources.length} approved · {doc.researchQuality?.rejectedCount ?? (doc.rejectedSources || []).length} rejected
             </p>
             {writingBlocked && (
@@ -463,17 +494,17 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
                 {doc.researchQuality?.contaminationReason || "Not enough reliable sources were found."}
               </p>
             )}
-            {doc.status === "failed" && (
-              <p className="mt-3 text-sm text-unsupported">{doc.error || "Research failed. Retry without creating a new ebook."}</p>
+            {(researchState === "error" || doc.status === "failed") && (
+              <p className="mt-3 text-sm text-unsupported">{doc.researchRun?.error || doc.error || "शोध पूरा नहीं हो सका। पुनः प्रयास करें।"}</p>
             )}
-            {["awaiting_outline", "complete"].includes(doc.status) && !writingBlocked && (
-              <p className="mt-3 text-sm text-verified">Research complete for this ebookId. Sources and outline are saved.</p>
+            {researchState === "success" && !writingBlocked && (
+              <p className="mt-3 text-sm text-verified">शोध पूरा हुआ। स्रोत और रूपरेखा इसी ebookId पर सुरक्षित हैं।</p>
             )}
             <div className="mt-4 flex flex-wrap gap-2">
-              <button className="btn-gold" disabled={!!busy} onClick={startResearch}>
-                {busy === "research" ? "Starting…" : generating ? "Research running…" : "Re-run research"}
+              <button className="btn-gold" disabled={!!busy || researchState === "running"} onClick={startResearch}>
+                {busy === "research" ? "शोध शुरू हो रहा है…" : researchState === "running" ? "शोध चल रहा है…" : researchState === "idle" ? "Run Research" : "Regenerate Research"}
               </button>
-              {generating && (
+              {researchState === "running" && (
                 <button
                   className="btn-ghost"
                   onClick={async () => {
@@ -491,8 +522,16 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
                   Cancel
                 </button>
               )}
+              {(researchState === "error" || researchState === "cancelled") && (
+                <button className="btn-ghost" disabled={!!busy} onClick={startResearch}>
+                  Retry
+                </button>
+              )}
               <button className="btn-ghost" onClick={() => go("outline")}>
                 Review outline
+              </button>
+              <button className="btn-ghost" onClick={() => go("sources")}>
+                Open sources
               </button>
             </div>
           </div>
@@ -504,6 +543,23 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
               ))}
             </ul>
           </div>
+          {(doc.chapterResearch || []).length > 0 && (
+            <div className="paper-card rounded-2xl p-5">
+              <h3 className="font-display text-lg">Chapter research</h3>
+              <ol className="mt-3 space-y-3 text-sm">
+                {doc.chapterResearch!.map((ch) => (
+                  <li key={ch.chapterId} className="border-b border-paper-300 pb-3">
+                    <p className="font-semibold">
+                      अध्याय {ch.chapterIndex + 1}. {ch.title}
+                    </p>
+                    <p className="text-ink-400">{ch.sourcesFound} स्रोत · {ch.status}</p>
+                    {ch.researchQuestion && <p className="mt-1">{ch.researchQuestion}</p>}
+                    {ch.notes && <pre className="mt-2 whitespace-pre-wrap font-sans text-xs text-ink-400">{ch.notes}</pre>}
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
         </section>
       )}
 
@@ -568,11 +624,15 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
                   <p className="text-ink-400">
                     {s.author || s.organization}
                     {s.year ? ` · ${s.year}` : ""}
-                    {s.publisher ? ` · ${s.publisher}` : ""}
+                    {s.publication || s.publisher ? ` · ${s.publication || s.publisher}` : ""}
                     {s.sourceType ? ` · ${s.sourceType}` : ""}
-                    {s.verificationStatus ? ` · ${s.verificationStatus}` : ""}
+                  </p>
+                  {s.citation && <p className="text-xs">{s.citation}</p>}
+                  <p className={`text-xs ${s.verificationStatus === "verified" ? "text-verified" : "text-review"}`}>
+                    {s.verificationStatus === "verified" ? "सत्यापित" : "सत्यापन आवश्यक"}
                   </p>
                   {s.reliabilityNote && <p className="text-xs text-ink-300">{s.reliabilityNote}</p>}
+                  {s.notes && s.notes !== s.reliabilityNote && <p className="text-xs text-ink-300">{s.notes}</p>}
                   {s.claimSupported && <p className="text-xs">Claim: {s.claimSupported}</p>}
                   <div className="mt-1 flex gap-2">
                     <a className="underline text-xs" href={s.url} target="_blank" rel="noreferrer">
@@ -636,6 +696,28 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
           <div className="mt-5 flex flex-wrap gap-2">
             <button className="btn-ghost" onClick={() => patch({ outline: doc.outline })}>
               Save outline
+            </button>
+            <button
+              className="btn-ghost"
+              disabled={!!busy}
+              onClick={async () => {
+                setBusy("regen-outline");
+                setError("");
+                try {
+                  const data = await api(`/api/ebooks/${ebookId}/research`, {
+                    method: "POST",
+                    body: JSON.stringify({ action: "regenerate-outline" }),
+                  });
+                  if (data.ebook) setDoc(data.ebook);
+                  else if (data.outline) setDoc({ ...doc, outline: data.outline });
+                } catch (e: any) {
+                  setError(e.message);
+                } finally {
+                  setBusy("");
+                }
+              }}
+            >
+              {busy === "regen-outline" ? "Updating…" : "Regenerate Outline"}
             </button>
             <button className="btn-gold min-h-[48px]" disabled={!!busy || writingBlocked} onClick={writeFromOutline}>
               {writingBlocked ? "Writing blocked" : busy === "write" ? "Starting…" : "Approve outline & write"}
