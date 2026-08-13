@@ -20,7 +20,7 @@ export default function RegisterPage() {
     setError("");
     try {
       await api("/api/auth/register", { method: "POST", body: JSON.stringify({ name, email, password }) });
-      router.push("/dashboard");
+      router.push("/ebooks");
     } catch (err: any) {
       setError(err.message);
     } finally {

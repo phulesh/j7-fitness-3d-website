@@ -24,9 +24,24 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
 
   const patch: Record<string, unknown> = {};
-  if (typeof body.language === "string") patch.language = body.language.slice(0, 16);
+  if (typeof body.language === "string") {
+    const { normalizeOutputLanguage } = await import("@/lib/language");
+    const lang = body.language === "auto" ? "auto" : normalizeOutputLanguage(body.language);
+    patch.language = lang;
+    patch.outputLanguage = lang;
+  }
+  if (typeof body.outputLanguage === "string") {
+    const { normalizeOutputLanguage } = await import("@/lib/language");
+    patch.outputLanguage = body.outputLanguage === "auto" ? "auto" : normalizeOutputLanguage(body.outputLanguage);
+    if (patch.outputLanguage !== "auto") patch.language = patch.outputLanguage;
+  }
   if (typeof body.title === "string") patch.title = body.title.slice(0, 200);
+  if (typeof body.customTitle === "string") {
+    patch.customTitle = body.customTitle.slice(0, 200);
+    if (!body.title) patch.title = patch.customTitle;
+  }
   if (typeof body.subtitle === "string") patch.subtitle = body.subtitle.slice(0, 240);
+  if (Array.isArray(body.researchQuestions)) patch.researchQuestions = body.researchQuestions.slice(0, 24);
   if (typeof body.introduction === "string") patch.introduction = body.introduction;
   if (typeof body.conclusion === "string") patch.conclusion = body.conclusion;
   if (typeof body.authorName === "string") {
@@ -34,7 +49,22 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   }
   if (body.settings) {
     const parsed = settingsSchema.partial().safeParse(body.settings);
-    if (parsed.success) patch.settings = { ...ebook.settings, ...parsed.data };
+    if (parsed.success) {
+      const { normalizeOutputLanguage } = await import("@/lib/language");
+      const merged = { ...ebook.settings, ...parsed.data };
+      if (merged.language && merged.language !== "auto") {
+        merged.language = normalizeOutputLanguage(merged.language);
+        merged.outputLanguage = merged.language;
+        patch.language = merged.language;
+        patch.outputLanguage = merged.language;
+      }
+      if (merged.customTitle) {
+        merged.title = merged.customTitle;
+        patch.customTitle = merged.customTitle;
+        if (!body.title) patch.title = merged.customTitle;
+      }
+      patch.settings = merged;
+    }
   }
   if (body.syllabus) {
     patch.syllabus = body.syllabus;

@@ -1,5 +1,5 @@
-import { createJob, getEbook, getLatestJob } from "@/lib/ebooks";
-import { continueFromOutline, startGeneration } from "@/lib/generate/runner";
+import { createJob, getActiveJob, getEbook, getLatestJob } from "@/lib/ebooks";
+import { continueFromOutline, isRunning, startGeneration } from "@/lib/generate/runner";
 import { requireUser, json, bad, limit } from "@/lib/api";
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -25,11 +25,38 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     );
   }
 
-  const job = createJob(ebook.id, auth.user.id);
+  const latest = getLatestJob(ebook.id, "generate") || getLatestJob(ebook.id);
+  const recentlyRunning =
+    latest &&
+    (latest.status === "running" || latest.status === "queued") &&
+    Date.now() - Date.parse(latest.updatedAt || latest.createdAt) < 120000;
+
+  if (ebook.status === "complete" && !body.resume && !body.fromOutline) {
+    return json({
+      jobId: latest?.id,
+      ebookId: ebook.id,
+      status: "complete",
+      reused: true,
+      message: "This ebook is already generated. Open the existing volume.",
+    });
+  }
+
+  if (isRunning(ebook.id) || recentlyRunning) {
+    const existing = getActiveJob(ebook.id) || latest;
+    return json({
+      jobId: existing?.id,
+      ebookId: ebook.id,
+      status: "already-running",
+      reused: true,
+      message: "Generation is already running for this ebook.",
+    });
+  }
+
+  const job = createJob(ebook.id, auth.user.id, "generate");
   if (body.fromOutline || ebook.status === "awaiting_outline") {
     continueFromOutline(ebook.id, job.id).catch((e) => console.error(e));
-    return json({ jobId: job.id, status: "writing" });
+    return json({ jobId: job.id, ebookId: ebook.id, status: "writing" });
   }
   startGeneration(ebook.id, job.id, { resume: Boolean(body.resume), skipOutlineWait: true });
-  return json({ jobId: job.id, status: "started" });
+  return json({ jobId: job.id, ebookId: ebook.id, status: "started" });
 }

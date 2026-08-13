@@ -19,7 +19,7 @@ export default function LoginPage() {
     setError("");
     try {
       await api("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
-      router.push("/dashboard");
+      router.push("/ebooks");
     } catch (err: any) {
       setError(err.message);
     } finally {

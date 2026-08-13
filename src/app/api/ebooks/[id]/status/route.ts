@@ -16,6 +16,10 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     wordCount: ebook.wordCount,
     outline: ebook.outline,
     title: ebook.title,
+    ebookId: ebook.ebookId || ebook.id,
+    language: ebook.outputLanguage || ebook.language,
+    researchQuestions: ebook.researchQuestions || ebook.analysis?.researchQuestions || [],
+    lastCompletedStage: ebook.lastCompletedStage,
     sources: ebook.sources.map((s) => ({
       id: s.id,
       title: s.title,
@@ -32,6 +36,5 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     })),
     rejectedSources: ebook.rejectedSources || [],
     researchQuality: ebook.researchQuality,
-    researchQuestions: ebook.analysis?.researchQuestions || [],
   });
 }

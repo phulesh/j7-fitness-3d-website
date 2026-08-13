@@ -237,10 +237,18 @@ export interface Chapter {
   factFlags?: FactFlag[];
 }
 
+export type FactDisplayStatus = "Supported" | "Partially supported" | "Contested" | "Unsupported";
+export type FactClassification = "FACT" | "INTERPRETATION" | "HYPOTHESIS" | "CONTROVERSY";
+
 export interface FactFlag {
   id: string;
   claim: string;
-  status: "verified" | "needs_review" | "unsupported";
+  status: "verified" | "needs_review" | "unsupported" | "contested" | "partial";
+  displayStatus?: FactDisplayStatus;
+  classification?: FactClassification;
+  confidence?: number;
+  evidence?: string;
+  source?: string;
   explanation: string;
   sourceIds: number[];
   suggestedFix?: string;
@@ -251,6 +259,12 @@ export interface OutlineItem {
   id: string;
   title: string;
   summary: string;
+  purpose?: string;
+  researchQuestions?: string[];
+  keyTopics?: string[];
+  evidence?: string[];
+  importantClaims?: string[];
+  uncertaintyNotes?: string;
   sourceIds: number[];
   children?: { title: string; summary: string }[];
 }
@@ -296,7 +310,9 @@ export interface TopicAnalysis {
 export interface EbookSettings {
   topic: string;
   title?: string;
+  customTitle?: string;
   language: string;
+  outputLanguage?: string;
   type: EbookType;
   audience: string;
   difficulty: Difficulty;
@@ -316,6 +332,7 @@ export interface EbookSettings {
   authorName: string;
   coverStyle: CoverStyle;
   subtitle?: string;
+  researchQuestions?: string[];
 }
 
 export interface GlossaryEntry {
@@ -330,12 +347,26 @@ export interface FaqItem {
   sourceIds: number[];
 }
 
+export type EbookStage =
+  | "draft"
+  | "settings"
+  | "research"
+  | "sources"
+  | "outline"
+  | "writing"
+  | "factcheck"
+  | "cover"
+  | "complete";
+
 export interface EbookDocument {
   id: string;
+  ebookId: string;
   userId: string;
   title: string;
+  customTitle?: string;
   subtitle: string;
   language: string;
+  outputLanguage: string;
   type: EbookType;
   audience: string;
   difficulty: Difficulty;
@@ -354,6 +385,7 @@ export interface EbookDocument {
   settings: EbookSettings;
   analysis?: TopicAnalysis;
   syllabus?: SyllabusInfo;
+  researchQuestions?: string[];
   outline: OutlineItem[];
   introduction: string;
   conclusion: string;
@@ -372,6 +404,14 @@ export interface EbookDocument {
   disclaimer?: string;
   wordCount: number;
   chapterCount: number;
+  lastCompletedStage?: EbookStage;
+  generationRequestId?: string;
+  languageCheck?: {
+    expected: string;
+    passed: boolean;
+    regeneratedSections: string[];
+    detail?: string;
+  };
   progress: {
     step: string;
     percent: number;
@@ -396,12 +436,27 @@ export interface GenerationJob {
   id: string;
   ebookId: string;
   userId: string;
+  kind?: "research" | "generate" | "factcheck" | "export";
   status: "queued" | "running" | "complete" | "failed" | "paused";
   step: string;
   percent: number;
   message: string;
   lastChapterIndex: number;
+  requestId?: string;
+  idempotencyKey?: string;
   error?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OperationRecord {
+  id: string;
+  ebookId: string;
+  userId: string;
+  kind: string;
+  idempotencyKey: string;
+  status: "running" | "complete" | "failed";
+  jobId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -409,6 +464,7 @@ export interface GenerationJob {
 export const DEFAULT_SETTINGS: EbookSettings = {
   topic: "",
   language: "auto",
+  outputLanguage: "auto",
   type: "Educational Book",
   audience: "General readers",
   difficulty: "Beginner",
@@ -427,4 +483,29 @@ export const DEFAULT_SETTINGS: EbookSettings = {
   includeCover: true,
   authorName: "",
   coverStyle: "Academic",
+  researchQuestions: [],
 };
+
+export function displayStatus(status: EbookDocument["status"]): string {
+  switch (status) {
+    case "draft":
+    case "paused":
+      return "Draft";
+    case "analyzing":
+    case "researching":
+      return "Researching";
+    case "outlining":
+    case "awaiting_outline":
+      return "Outline Ready";
+    case "writing":
+    case "fact_checking":
+    case "exporting":
+      return "Writing";
+    case "complete":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    default:
+      return status;
+  }
+}

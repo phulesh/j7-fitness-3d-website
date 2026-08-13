@@ -2,7 +2,7 @@ import fs from "fs";
 import path from "path";
 import sharp from "sharp";
 import type { CoverStyle, TopicCategory } from "../types";
-import { escapeHtml } from "./write";
+import { escapeHtml } from "./text";
 
 export function coverSvg(opts: {
   title: string;

@@ -57,7 +57,7 @@ export default function HomePage() {
     setBusy(true);
     try {
       await ensureSession();
-      router.push(`/create?topic=${encodeURIComponent(t)}`);
+      router.push(`/ebooks/new?topic=${encodeURIComponent(t)}`);
     } finally {
       setBusy(false);
     }
@@ -98,10 +98,10 @@ export default function HomePage() {
                   </button>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2 px-2 pb-2">
-                  <Link href="/create?upload=syllabus" className="btn-ghost !py-1.5 !text-xs">
+                  <Link href="/ebooks/new?upload=syllabus" className="btn-ghost !py-1.5 !text-xs">
                     <Upload className="h-3.5 w-3.5" /> Upload Syllabus
                   </Link>
-                  <Link href="/create?upload=document" className="btn-ghost !py-1.5 !text-xs">
+                  <Link href="/ebooks/new?upload=document" className="btn-ghost !py-1.5 !text-xs">
                     <Upload className="h-3.5 w-3.5" /> Upload Document
                   </Link>
                 </div>
@@ -195,8 +195,8 @@ export default function HomePage() {
                 Large tap targets, a one-field start, progress you can leave and resume, and downloads that work on Android.
                 Guest mode lets you try a title without creating an account.
               </p>
-              <Link href="/create" className="btn-gold mt-6">
-                Start a book <ArrowRight className="h-4 w-4" />
+              <Link href="/ebooks/new" className="btn-gold mt-6">
+                Create New Ebook <ArrowRight className="h-4 w-4" />
               </Link>
             </div>
           </div>

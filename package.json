@@ -9,6 +9,7 @@
     "start": "next start -H 0.0.0.0 -p 3000",
     "lint": "next lint",
     "test:relevance": "npx --yes tsx src/lib/research/relevance-selftest.ts",
+    "test:upgrade": "npx --yes tsx src/lib/ebook-selftest.ts",
     "postinstall": "node scripts/ensure-dirs.js && node scripts/seed-corpus.mjs"
   },
   "dependencies": {
@@ -27,6 +28,9 @@
     "pdfkit": "^0.15.2",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "three": "^0.170.0",
+    "@react-three/fiber": "^8.17.14",
+    "@react-three/drei": "^9.120.4",
     "sanitize-html": "^2.13.1",
     "sharp": "^0.33.5",
     "zod": "^3.24.1"
@@ -37,6 +41,7 @@
     "@types/pdfkit": "^0.13.8",
     "@types/react": "^18.3.16",
     "@types/react-dom": "^18.3.5",
+    "@types/three": "^0.170.0",
     "@types/sanitize-html": "^2.13.0",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",

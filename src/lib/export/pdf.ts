@@ -69,9 +69,10 @@ function requireFont(label: string, candidates: readonly string[]): string {
 
 export async function exportPdf(doc: EbookDocument, destPath: string): Promise<string> {
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
-  const f = fonts(doc.language);
-  const labels = labelsFor(doc.language);
-  const rtl = isRtl(doc.language);
+  const lang = doc.outputLanguage || doc.language;
+  const f = fonts(lang);
+  const labels = labelsFor(lang);
+  const rtl = isRtl(lang);
 
   const pdf = new PDFDocument({
     size: "A4",

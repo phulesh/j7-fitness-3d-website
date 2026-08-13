@@ -12,6 +12,7 @@ export type StoreShape = {
   research: any[];
   jobs: any[];
   downloads: any[];
+  operations: any[];
   rateLimits: Record<string, { count: number; windowStart: number }>;
   sourceSeq: number;
 };
@@ -26,6 +27,7 @@ const EMPTY: StoreShape = {
   research: [],
   jobs: [],
   downloads: [],
+  operations: [],
   rateLimits: {},
   sourceSeq: 1,
 };

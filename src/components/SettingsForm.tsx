@@ -20,6 +20,15 @@ export function SettingsForm({
   onChange: (next: EbookSettings) => void;
 }) {
   function set<K extends keyof EbookSettings>(k: K, v: EbookSettings[K]) {
+    if (k === "language") {
+      const lang = String(v);
+      onChange({ ...value, language: lang, outputLanguage: lang === "auto" ? "auto" : lang });
+      return;
+    }
+    if (k === "title") {
+      onChange({ ...value, title: String(v), customTitle: String(v) });
+      return;
+    }
     onChange({ ...value, [k]: v });
   }
 

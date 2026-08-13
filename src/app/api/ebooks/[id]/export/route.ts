@@ -23,7 +23,8 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
 
   const dir = path.join(process.cwd(), "data", "exports");
   fs.mkdirSync(dir, { recursive: true });
-  const base = `${safeFilename(ebook.title)}-${ebook.id.slice(0, 6)}`;
+  const asciiBase = `${safeFilename(ebook.title).replace(/[^\x20-\x7E]/g, "").trim() || "ebook"}-${ebook.id.slice(0, 6)}`;
+  const base = asciiBase;
   const dest = path.join(dir, `${base}.${format}`);
 
   if (ebook.cover?.svg && !ebook.cover.pngPath) {
@@ -35,9 +36,14 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     }
   }
 
-  if (format === "pdf") await exportPdf(ebook, dest);
-  else if (format === "docx") await exportDocx(ebook, dest);
-  else await exportEpub(ebook, dest);
+  try {
+    if (format === "pdf") await exportPdf(ebook, dest);
+    else if (format === "docx") await exportDocx(ebook, dest);
+    else await exportEpub(ebook, dest);
+  } catch (err) {
+    console.error("export failed", err);
+    return bad("Export service temporarily unavailable. Your ebook data has been saved. Please retry.", 503);
+  }
 
   recordDownload(ebook.id, auth.user.id, format, dest);
   const buf = fs.readFileSync(dest);

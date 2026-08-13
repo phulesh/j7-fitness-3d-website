@@ -88,7 +88,7 @@ STRICT RULES:
 - Do not reproduce copyrighted books. Write original explanations.
 - Do not pad with repetition or generic filler.
 - Preserve technical terminology.
-- Write in the requested language using correct Unicode text.
+- Write in the requested output language using correct Unicode text. If outputLanguage is hi, write Devanagari Hindi. English is allowed only for proper names, book titles, technical terms, URLs, and citations.
 - Return clean Markdown with headings, lists, and tables when useful.
 - Every factual paragraph should include at least one citation when a source exists.
 - Never present an author's historical hypothesis as universally established fact.

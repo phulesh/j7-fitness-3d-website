@@ -7,8 +7,8 @@ import { isRtl } from "../language";
 
 export async function exportEpub(doc: EbookDocument, destPath: string): Promise<string> {
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
-  const labels = labelsFor(doc.language);
-  const rtl = isRtl(doc.language);
+  const labels = labelsFor(doc.outputLanguage || doc.language);
+  const rtl = isRtl(doc.outputLanguage || doc.language);
   const zip = new JSZip();
   zip.file("mimetype", "application/epub+zip", { compression: "STORE" });
 
@@ -161,7 +161,7 @@ export async function exportEpub(doc: EbookDocument, destPath: string): Promise<
     <dc:identifier id="bookid">urn:uuid:${doc.id}</dc:identifier>
     <dc:title>${esc(doc.title)}</dc:title>
     <dc:creator>${esc(doc.settings.authorName || "Folio Research")}</dc:creator>
-    <dc:language>${esc(doc.language)}</dc:language>
+    <dc:language>${esc(doc.outputLanguage || doc.language)}</dc:language>
     <dc:description>${esc(doc.subtitle)}</dc:description>
     <dc:publisher>Folio</dc:publisher>
     <meta property="dcterms:modified">${new Date().toISOString().replace(/\.\d+Z$/, "Z")}</meta>
