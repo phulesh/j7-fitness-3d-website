@@ -48,7 +48,7 @@ export function useEbook(ebookId: string) {
   useEffect(() => {
     if (!doc) return;
     if (
-      ["analyzing", "researching", "outlining", "writing", "fact_checking"].includes(doc.status) ||
+      ["analyzing", "researching", "outlining", "writing", "fact_checking", "exporting"].includes(doc.status) ||
       doc.researchRun?.status === "running"
     ) {
       const t = setInterval(() => load().catch(() => {}), 1400);

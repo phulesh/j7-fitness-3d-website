@@ -2,6 +2,7 @@ export const LANGUAGES = [
   { code: "auto", name: "Auto Detect Language", native: "Auto" },
   { code: "en", name: "English", native: "English" },
   { code: "hi", name: "Hindi", native: "हिन्दी" },
+  { code: "hinglish", name: "Hinglish", native: "Hinglish" },
   { code: "es", name: "Spanish", native: "Español" },
   { code: "fr", name: "French", native: "Français" },
   { code: "de", name: "German", native: "Deutsch" },
@@ -417,6 +418,11 @@ export interface EbookSettings {
   subtitle?: string;
   researchQuestions?: string[];
   historicalPeriod?: string;
+  customInstructions?: string;
+  citationStyle?: "simple" | "apa" | "mla" | "chicago";
+  researchDepth?: "standard" | "deep" | "exhaustive";
+  factCheckIntensity?: "standard" | "strict";
+  targetWordCount?: number;
 }
 
 export interface GlossaryEntry {

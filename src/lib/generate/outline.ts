@@ -827,7 +827,7 @@ export function plannedChaptersForTopic(opts: {
 }): PlannedChapter[] {
   const { topic, settings, analysis, requestedCount } = opts;
   const hindi = isHindiOutput(analysis.outputLanguage || settings.outputLanguage || settings.language);
-  const n = Math.max(4, Math.min(20, requestedCount || 10));
+  const n = Math.max(5, Math.min(25, requestedCount || 10));
 
   if (isAchhootResearchTopic(topic)) {
     const full = hindi ? achhootHindiPlan() : achhootEnglishPlan();

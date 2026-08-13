@@ -155,11 +155,13 @@ export function Book3D({
   doc,
   pages,
   coverSvg,
+  previewTheme = "light",
 }: {
   ebookId: string;
   doc: EbookDocument;
   pages: BookPage[];
   coverSvg?: string;
+  previewTheme?: "light" | "dark";
 }) {
   const [leaf, setLeaf] = useState(0);
   const [turning, setTurning] = useState(0);
@@ -278,7 +280,7 @@ export function Book3D({
           camera={{ position: [0, 0.15, 3.1 / zoom], fov: 38 }}
           gl={{ antialias: !lowMem, powerPreference: "high-performance" }}
         >
-          <color attach="background" args={[full ? "#120D0A" : "#EDE4D4"]} />
+          <color attach="background" args={[full || previewTheme === "dark" ? "#120D0A" : "#EDE4D4"]} />
           <ambientLight intensity={0.7} />
           <directionalLight position={[3, 4, 5]} intensity={1.15} castShadow />
           <directionalLight position={[-3, 2, 2]} intensity={0.35} color="#E0C56E" />

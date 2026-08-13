@@ -10,7 +10,7 @@ export const settingsSchema = z.object({
   type: z.enum(EBOOK_TYPES).default("Educational Book"),
   audience: z.string().min(2).max(80).default("General readers"),
   difficulty: z.enum(DIFFICULTIES).default("Beginner"),
-  chapterCount: z.number().int().min(4).max(20).default(10),
+  chapterCount: z.number().int().min(5).max(25).default(10),
   length: z.enum(["short", "medium", "long", "comprehensive"]).default("medium"),
   style: z.string().max(80).default("Clear academic"),
   includeExamples: z.boolean().default(true),
@@ -27,6 +27,11 @@ export const settingsSchema = z.object({
   coverStyle: z.enum(COVER_STYLES).default("Academic"),
   subtitle: z.string().max(240).optional(),
   researchQuestions: z.array(z.string().max(400)).optional(),
+  customInstructions: z.string().max(4000).optional(),
+  citationStyle: z.enum(["simple", "apa", "mla", "chicago"]).optional(),
+  researchDepth: z.enum(["standard", "deep", "exhaustive"]).optional(),
+  factCheckIntensity: z.enum(["standard", "strict"]).optional(),
+  targetWordCount: z.number().int().min(1000).max(200000).optional(),
 });
 
 export const registerSchema = z.object({

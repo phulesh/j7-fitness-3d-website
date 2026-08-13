@@ -385,7 +385,7 @@ async function generateEbook(
     return;
   }
 
-  progress("analyzing", 4, "Researching topic...", "analyzing", "Detecting language, category, and source strategy");
+  progress("analyzing", 4, "Understanding topic...", "analyzing");
 
   const vague = detectVagueness(doc.settings.topic);
   if (vague) {
@@ -430,13 +430,13 @@ async function generateEbook(
     settings: { ...doc.settings, title: resolvedTitle, language: outputLanguage, outputLanguage },
   });
 
-  progress("researching", 12, "Finding reliable sources...", "researching", analysis.searchQueries.slice(0, 3).join(" · "));
+  progress("researching", 12, "Finding sources...", "researching");
 
   const bundle = await runResearch(ebookId, analysis, doc.settings, (msg) => {
     progress("researching", 20, "Finding reliable sources...", "researching", msg);
   });
 
-  progress("outlining", 38, "Creating ebook structure...", "outlining");
+  progress("outlining", 38, "Building outline...", "outlining");
 
   if (consumeCancel(ebookId)) {
     updateEbook(ebookId, {
@@ -497,8 +497,11 @@ async function generateEbook(
     progress: {
       step: blocked || !opts.skipOutlineWait ? "awaiting_outline" : "writing",
       percent: 45,
-      message: blocked ? "Research quality gate — writing blocked" : opts.skipOutlineWait ? "Writing chapters..." : "Outline ready — review structure",
-      detail: `Research Quality: ${bundle.researchQuality.relevantCount} relevant sources / ${bundle.researchQuality.rejectedCount} rejected sources`,
+      message: blocked
+        ? "Not enough reliable sources were found. You can try again."
+        : opts.skipOutlineWait
+          ? "Writing chapters..."
+          : "Building outline...",
     },
   });
   updateJob(jobId, {

@@ -37,11 +37,11 @@ const devanagari = localFont({
 
 export const metadata: Metadata = {
   title: {
-    default: "Folio — Turn any topic into a research-based ebook",
+    default: "Folio — अपनी किताब बनाइए, बस विषय लिखिए",
     template: "%s · Folio",
   },
   description:
-    "Enter a topic. Folio researches reliable sources, organizes the knowledge, and creates a professional ebook in your language — with citations, PDF, DOCX, and EPUB.",
+    "एक विषय लिखें। AI शोध, अध्याय, संदर्भ, चित्र और 3D पुस्तक तैयार करेगा। PDF, EPUB और DOCX डाउनलोड करें।",
   applicationName: "Folio",
   keywords: ["ebook generator", "research", "PDF", "multilingual", "syllabus", "citations"],
 };
