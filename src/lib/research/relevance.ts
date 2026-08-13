@@ -189,10 +189,14 @@ export function parseNamedWork(topic: string): { workTitle?: string; author?: st
 }
 
 export function isAmbedkarUntouchablesTopic(topic: string): boolean {
-  const t = normalizeText(topic);
-  const hasWork = /\buntouchable/.test(t);
-  const hasAuthor = /\bambedkar\b/.test(t);
-  const hasQuestion = /\bwho were they\b|\bwhy they became\b|\bbroken men\b/.test(t);
+  const raw = topic || "";
+  const t = normalizeText(raw);
+  if (/अछूत\s*कौन\s*थे/.test(raw) || /अछूत\s*कैसे\s*बने/.test(raw)) return true;
+  if (/अस्पृश्य/.test(raw) && /आंबेडकर|अम्बेडकर|अछूत/.test(raw)) return true;
+  const hasWork = /\buntouchable/.test(t) || /अछूत|अस्पृश्य/.test(raw);
+  const hasAuthor = /\bambedkar\b/.test(t) || /आंबेडकर|अम्बेडकर/.test(raw);
+  const hasQuestion =
+    /\bwho were they\b|\bwhy they became\b|\bbroken men\b/.test(t) || /कौन थे|कैसे बने|अस्पृश्यता/.test(raw);
   return hasWork && (hasAuthor || hasQuestion);
 }
 
@@ -385,7 +389,7 @@ function ambedkarUntouchablesProfile(topic: string): TopicProfile {
     allowBroadBiography: false,
     allowScientificPapers: false,
     chapterPlan,
-    targetChapterCount: { min: 12, max: 15 },
+    targetChapterCount: { min: 14, max: 14 },
     claimDiscipline: "historical-hypothesis",
     imageQuery: "B. R. Ambedkar untouchability India historical",
   };

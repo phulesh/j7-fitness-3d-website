@@ -17,6 +17,8 @@ import type {
   TopicAnalysis,
 } from "../types";
 import { chapterPlain, countWords, escapeHtml, labelsFor } from "./text";
+import { ACHHOOT_HINDI_TITLES } from "./outline";
+import { figuresToHtml } from "./images";
 
 export function hindiClaimLabel(kind: string): string {
   switch (kind) {
@@ -118,64 +120,10 @@ export const HINDI_OUTLINE_TEMPLATES: Record<string, string[]> = {
   ],
 };
 
-export const AMBEDKAR_HINDI_PLAN: { title: string; summary: string }[] = [
-  {
-    title: "अस्पृश्यता क्या है?",
-    summary: "अस्पृश्यता को सामाजिक-ऐतिहासिक व्यवहार के रूप में परिभाषित करें। कानूनी वर्णन और जीवित बहिष्कार को अलग रखें।",
-  },
-  {
-    title: "आंबेडकर के अनुसार अस्पृश्य कौन थे?",
-    summary: "The Untouchables (1948) में आंबेडकर का अपना उत्तर प्रस्तुत करें। इसे लेखक का फ्रेम बताएँ, न कि निर्विवाद जनगणना तथ्य।",
-  },
-  {
-    title: "The Untouchables (1948) को पढ़ना",
-    summary: "पुस्तक की तिथि, उद्देश्य और ऐतिहासिक प्रश्न को आंबेडकर के लेखन में रखें। पूर्ण जीवनी न लिखें।",
-  },
-  {
-    title: "ब्रोकन मेन सिद्धांत",
-    summary: "आंबेडकर की Broken Men परिकल्पना को व्याख्या के रूप में समझाएँ। दावों को साक्ष्य / व्याख्या / विवाद में वर्गीकृत करें।",
-  },
-  {
-    title: "बसी हुई समुदाय और ब्रोकन मेन",
-    summary: "गाँव की बसी हुई व्यवस्था और Broken Men के बीच आंबेडकर का अंतर पुस्तक के तर्क के भीतर रखें।",
-  },
-  {
-    title: "गाँव की सीमा और सामाजिक बहिष्कार",
-    summary: "गाँव के बाहर निवास को स्थायी बहिष्कार से जोड़ने वाला आंबेडकर का तर्क। वर्णन और कारण-कथा को अलग करें।",
-  },
-  {
-    title: "ब्रोकन मेन और बौद्ध धर्म",
-    summary: "Broken Men और बौद्ध धर्म का प्रस्तावित संबंध। जब तक स्वतंत्र साक्ष्य न हो, इसे लेखक का शोध-सूत्र मानें।",
-  },
-  {
-    title: "बौद्धों के प्रति घृणा",
-    summary: "आंबेडकर ने बौद्धों के प्रति घृणा को स्थायी सामाजिक मनोवृत्ति क्यों कहा — लेखक की व्याख्या के रूप में।",
-  },
-  {
-    title: "गोमांस-भक्षण: आंबेडकर की प्रस्तावित व्याख्या",
-    summary: "गोमांस-भक्षण वाले तर्क को आंबेडकर की प्रस्तावित व्याख्या के रूप में रखें, सार्वभौमिक इतिहास के रूप में नहीं।",
-  },
-  {
-    title: "क्या प्राचीन हिन्दू गोमांस खाते थे?",
-    summary: "आंबेडकर के उद्धृत ग्रंथों और उनके अनुमान को अलग-अलग चिह्नित करें।",
-  },
-  {
-    title: "ब्रोकन मेन अस्पृश्य कब बने — आंबेडकर की काल-रेखा",
-    summary: "तिथियाँ और कारण-दावे जहाँ पुस्तक अनुमान है वहाँ परिकल्पना के रूप में लिखें।",
-  },
-  {
-    title: "आंबेडकर के साक्ष्य, मान्यताएँ और ऐतिहासिक विधि",
-    summary: "वे किस प्रकार के साक्ष्य का उपयोग करते हैं और Broken Men कथा के लिए कौन-सी मान्यताएँ आवश्यक हैं।",
-  },
-  {
-    title: "आलोचनाएँ, सीमाएँ और परवर्ती व्याख्याएँ",
-    summary: "1948 के तर्क की सीमाएँ। आलोचक गढ़ें नहीं। स्रोत पतले हों तो स्पष्ट कहें।",
-  },
-  {
-    title: "स्थापित साक्ष्य, अनुच्छेद 17, और पाठक क्या सीखें",
-    summary: "संविधान के अनुच्छेद 17 जैसे स्थापित तथ्य को आंबेडकर की ऐतिहासिक परिकल्पना से अलग करें।",
-  },
-];
+export const AMBEDKAR_HINDI_PLAN: { title: string; summary: string }[] = ACHHOOT_HINDI_TITLES.map((title) => ({
+  title,
+  summary: title,
+}));
 
 const TITLE_HI: Record<string, string> = {
   "what is untouchability?": "अस्पृश्यता क्या है?",
@@ -472,11 +420,14 @@ export function composeHindiChapter(opts: {
     summary: `${title} का यह अध्याय अनुमोदित शोध स्रोतों पर आधारित है। अंग्रेज़ी मूल ग्रंथों के शीर्षक सुरक्षित रखे गए हैं; विश्लेषण देवनागरी में है।`,
     questions,
     mcqs,
-    images: (images || []).slice(0, 3),
+    images: (images || []).slice(0, 4),
     sourceIds: [...new Set(relevantSources.map((s) => s.id))],
     wordCount: 0,
     status: "complete",
   };
+  if (ch.images.length && ch.sections[0]) {
+    ch.sections[0].html += figuresToHtml(ch.images, "hi");
+  }
   ch.wordCount = countWords(chapterPlain(ch));
   return ch;
 }

@@ -95,6 +95,12 @@ export function buildBookPages(doc: EbookDocument): BookPage[] {
         ? `<h3>${esc(labels.objectives)}</h3><ul>${ch.learningObjectives.map((o) => `<li>${esc(o)}</li>`).join("")}</ul>`
         : "",
       ...ch.sections.map((s) => `<h3>${esc(s.heading)}</h3>${s.html}`),
+      ...(ch.images || []).map(
+        (img) =>
+          `<figure class="ebook-figure"><p>${esc(img.figureLabel || img.caption)}</p><p>${esc(img.credit)}</p>${
+            img.verifiedHistoricalPhoto === false ? "<p>व्याख्यात्मक चित्रण — ऐतिहासिक फोटोग्राफ नहीं</p>" : ""
+          }</figure>`
+      ),
       ch.keyPoints.length
         ? `<h3>${esc(labels.keyPoints)}</h3><ul>${ch.keyPoints.map((k) => `<li>${esc(k)}</li>`).join("")}</ul>`
         : "",

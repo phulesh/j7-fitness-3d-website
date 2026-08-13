@@ -70,7 +70,11 @@ export async function analyzeTopic(settings: EbookSettings, syllabusText?: strin
 
 export function categorize(topic: string, type: string): TopicCategory {
   const t = `${topic} ${type}`.toLowerCase();
-  if (isAmbedkarUntouchablesTopic(topic) || /\b(untouchab|broken men|dalit history|caste history)\b/.test(t)) {
+  if (
+    isAmbedkarUntouchablesTopic(topic) ||
+    /\b(untouchab|broken men|dalit history|caste history)\b/.test(t) ||
+    /अछूत|अस्पृश्य|आंबेडकर|अम्बेडकर/.test(topic)
+  ) {
     return "historical";
   }
   if (/\b(python|javascript|java\b|c\+\+|programming|react|sql|linux|git|html|css|api|coding)\b/.test(t))
@@ -82,7 +86,10 @@ export function categorize(topic: string, type: string): TopicCategory {
   if (/\b(constitution|law|ipc|crpc|article \d|supreme court|legal|rights)\b/.test(t)) return "legal";
   if (/\b(medicine|anatomy|physiology|disease|clinical|pharma|diagnosis|who |cdc )\b/.test(t)) return "medical";
   if (/\b(finance|stock|invest|accounting|tax|economy|banking|gdp)\b/.test(t)) return "financial";
-  if (/\b(history|civilization|empire|war|independence|ancient|medieval|who were they|why they became)\b/.test(t))
+  if (
+    /\b(history|civilization|empire|war|independence|ancient|medieval|who were they|why they became)\b/.test(t) ||
+    /इतिहास|स्वतंत्रता|औपनिवेशिक|प्राचीन|किसान आंदोलन|संविधान सभा/.test(topic)
+  )
     return "historical";
   if (/\b(biography|life of|autobiography)\b/.test(t) || type === "Biography") {
     // A named historical work plus an author is not a life-and-works biography.

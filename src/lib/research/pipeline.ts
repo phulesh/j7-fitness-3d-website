@@ -51,8 +51,15 @@ import type {
 import { nowIso, nextSourceId } from "../db";
 import { addResearch, replaceSources } from "../ebooks";
 import { isHindiOutput } from "../language";
-import { AMBEDKAR_HINDI_PLAN, HINDI_OUTLINE_TEMPLATES, localizeOutline } from "../generate/hindi";
-import { isAmbedkarUntouchablesTopic } from "./relevance";
+import { HINDI_OUTLINE_TEMPLATES, localizeOutline } from "../generate/hindi";
+
+import {
+  assertNoAmbedkarLeak,
+  fillOutlineItem,
+  isAchhootResearchTopic,
+  plannedChaptersForTopic,
+  plannedToOutlineItems,
+} from "../generate/outline";
 import { probeLiveWeb } from "./liveweb";
 
 export interface ResearchBundle {
@@ -572,10 +579,11 @@ function focusedCorpusQuery(profile: TopicProfile, topic: string): string {
 function wikiQueryList(profile: TopicProfile, topic: string): string[] {
   const qs = [];
   if (profile.workTitle && profile.author) qs.push(`${profile.workTitle} ${profile.author}`);
-  if (profile.kind === "named-work-inquiry" && /untouchab/.test(topic.toLowerCase())) {
+  if (profile.kind === "named-work-inquiry" && (/untouchab/.test(topic.toLowerCase()) || /अछूत|अस्पृश्य/.test(topic))) {
     qs.push("Untouchability");
     qs.push("The Untouchables Ambedkar");
     qs.push("Dalit Ambedkar");
+    qs.push("अस्पृश्यता");
   } else {
     qs.push(profile.workTitle || topic);
   }
@@ -613,11 +621,45 @@ function persistResearch(ebookId: string, query: string, hits: RawHit[]) {
 function persistSources(ebookId: string, sources: SourceRecord[]) {
   for (const s of sources) {
     if (!s.id) s.id = nextSourceId();
+    enrichSourceMetadata(s);
   }
   replaceSources(
     ebookId,
     sources.map((s) => ({ ...s, extractedText: (s.extractedText || "").slice(0, 20000) }))
   );
+}
+
+function enrichSourceMetadata(s: SourceRecord) {
+  const year = s.year || s.publishedAt?.slice(0, 4) || (s.extractedText || s.snippet || "").match(/\b(1[6-9]\d{2}|20[0-2]\d)\b/)?.[1];
+  if (year) s.year = year;
+  if (!s.author) {
+    const by = `${s.title} ${s.snippet}`.match(/\b(?:by|By)\s+([A-Z][A-Za-z.]+(?:\s+[A-Z][A-Za-z.]+){0,3})/);
+    if (by) s.author = by[1];
+    else if (/ambedkar/i.test(`${s.title} ${s.url}`)) s.author = "B. R. Ambedkar";
+  }
+  if (!s.publisher) s.publisher = s.organization;
+  if (!s.sourceType) {
+    s.sourceType = s.primarySource
+      ? /legislative|constitution|gazette/.test(s.url + s.title.toLowerCase())
+        ? "legal"
+        : /archive|wikisource|gutenberg/.test(s.url)
+          ? "archive"
+          : "primary"
+      : s.academicSource
+        ? "scholarly"
+        : /wikipedia|britannica/.test(s.domain || s.url)
+          ? "encyclopedia"
+          : s.tier <= 2
+            ? "official"
+            : "secondary";
+  }
+  if (!s.verificationStatus) {
+    s.verificationStatus = s.used && (s.relevanceScore || 0) >= 70 ? "verified" : "needs_review";
+  }
+  if (!s.reliabilityNote) {
+    s.reliabilityNote = s.reasonForInclusion || (s.primarySource ? "Primary / official record" : "Secondary source — check against primary texts");
+  }
+  if (!s.identifier) s.identifier = s.url;
 }
 
 async function maybeFindSyllabus(
@@ -648,15 +690,12 @@ export function buildOutlineFromResearch(
   syllabus?: SyllabusInfo
 ): OutlineItem[] {
   const profile = bundle.profile || buildTopicProfile(analysis.topic, { category: analysis.category, type: settings.type });
-  // The user explicitly chooses the chapter count on the Create form (range
-  // 4–20). That choice must be the primary driver of the outline length; the
-  // curated profile only supplies candidate chapter titles. We never let a
-  // profile plan silently inflate the count far beyond what the user requested
-  // (e.g. requesting 6 chapters and receiving 14).
-  const requested = settings.chapterCount || 10;
-  const n = Math.max(4, Math.min(20, requested));
+  const requested = isAchhootResearchTopic(analysis.topic)
+    ? 14
+    : settings.chapterCount || profile.targetChapterCount?.min || 10;
+  const n = isAchhootResearchTopic(analysis.topic) ? 14 : Math.max(4, Math.min(20, requested));
 
-  if (syllabus?.units?.length) {
+  if (syllabus?.units?.length && !isAchhootResearchTopic(analysis.topic)) {
     const items: OutlineItem[] = [];
     for (const unit of syllabus.units) {
       if (unit.topics.length) {
@@ -677,28 +716,28 @@ export function buildOutlineFromResearch(
     if (items.length >= 3) return normalizeOutlineCount(items, n, settings, analysis, bundle, profile);
   }
 
-  if (isHindiOutput(analysis.outputLanguage) && isAmbedkarUntouchablesTopic(analysis.topic)) {
-    const items = AMBEDKAR_HINDI_PLAN.slice(0, n).map((ch) =>
-      enrichOutlineItem({
-        id: nanoid(8),
-        title: ch.title,
-        summary: ch.summary,
-        sourceIds: bundle.sources.filter((s) => (s.relevanceScore ?? 0) >= MIN_RELEVANCE).slice(0, 8).map((s) => s.id),
-        children: [],
-      }, analysis, bundle)
-    );
+  const planned = plannedChaptersForTopic({
+    topic: analysis.topic,
+    settings,
+    analysis,
+    requestedCount: n,
+  });
+  if (planned.length) {
+    const items = plannedToOutlineItems(planned, bundle);
+    assertNoAmbedkarLeak(analysis.topic, items);
     return withPedagogy(items, settings, analysis, profile);
   }
 
-  if (profile.chapterPlan?.length) {
-    const items = profile.chapterPlan.slice(0, n).map((ch) =>
+  if (profile.chapterPlan?.length && profile.kind === "named-work-inquiry") {
+    const items = profile.chapterPlan.slice(0, n).map((ch, i) =>
       enrichOutlineItem({
         id: nanoid(8),
+        chapterNumber: i + 1,
         title: ch.title,
         summary: ch.summary,
         sourceIds: bundle.sources.filter((s) => (s.relevanceScore ?? 0) >= MIN_RELEVANCE).slice(0, 8).map((s) => s.id),
         children: [],
-      }, analysis, bundle)
+      }, analysis, bundle, i)
     );
     return localizeOutline(withPedagogy(items, settings, analysis, profile), analysis.outputLanguage);
   }
@@ -789,13 +828,29 @@ function defaultOutline(
   n: number,
   profile: TopicProfile
 ): OutlineItem[] {
+  const planned = plannedChaptersForTopic({
+    topic: analysis.topic,
+    settings,
+    analysis,
+    requestedCount: n,
+  });
+  if (planned.length) return plannedToOutlineItems(planned, bundle);
+
   if (profile.chapterPlan?.length) {
-    return profile.chapterPlan.slice(0, n).map((title) => ({
-      id: nanoid(8),
-      title: title.title,
-      summary: title.summary,
-      sourceIds: [],
-    }));
+    return profile.chapterPlan.slice(0, n).map((title, i) =>
+      enrichOutlineItem(
+        {
+          id: nanoid(8),
+          chapterNumber: i + 1,
+          title: title.title,
+          summary: title.summary,
+          sourceIds: [],
+        },
+        analysis,
+        bundle,
+        i
+      )
+    );
   }
   const terms = extractKeyTerms(bundle.wikiPages.map((p) => p.extract).join("\n") || analysis.topic, 20).filter(
     (t) => !isBlockedOutlineTitle(t, profile)
@@ -927,14 +982,20 @@ function defaultOutline(
     );
 }
 
-function enrichOutlineItem(item: OutlineItem, analysis: TopicAnalysis, bundle: ResearchBundle): OutlineItem {
+function enrichOutlineItem(
+  item: OutlineItem,
+  analysis: TopicAnalysis,
+  bundle: ResearchBundle,
+  index = 0
+): OutlineItem {
   const qs = (analysis.researchQuestions || []).filter((q) => {
     const hay = `${item.title} ${item.summary}`.toLowerCase();
     return q.toLowerCase().split(/\s+/).some((w) => w.length > 4 && hay.includes(w));
   });
-  return {
+  const base: OutlineItem = {
     ...item,
     purpose: item.purpose || item.summary,
+    researchQuestion: item.researchQuestion || qs[0] || item.researchQuestions?.[0],
     researchQuestions: item.researchQuestions?.length ? item.researchQuestions : qs.slice(0, 4),
     keyTopics: item.keyTopics?.length ? item.keyTopics : item.children?.map((c) => c.title) || [],
     evidence: item.evidence?.length
@@ -943,12 +1004,13 @@ function enrichOutlineItem(item: OutlineItem, analysis: TopicAnalysis, bundle: R
           .filter((f) => item.title.toLowerCase().split(/\s+/).some((w) => w.length > 3 && f.text.toLowerCase().includes(w)))
           .slice(0, 3)
           .map((f) => f.text),
-    importantClaims: item.importantClaims || [],
+    importantClaims: item.importantClaims || item.claimsToVerify || [],
     uncertaintyNotes:
       item.uncertaintyNotes ||
       (analysis.topicKind === "named-work-inquiry"
         ? "Author hypotheses in this chapter are labelled as interpretation, not established fact."
-        : undefined),
+        : "Mark unverified causal claims as disputed."),
     sourceIds: item.sourceIds?.length ? item.sourceIds : bundle.sources.slice(0, 6).map((s) => s.id),
   };
+  return fillOutlineItem(base, index, bundle);
 }

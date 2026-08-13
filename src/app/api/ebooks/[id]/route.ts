@@ -1,7 +1,8 @@
 import { deleteEbook, getEbook, updateEbook, clientEbook, saveChapters } from "@/lib/ebooks";
 import { requireUser, json, bad } from "@/lib/api";
 import { outlineSchema, settingsSchema } from "@/lib/validation";
-import { coverSvg } from "@/lib/generate/cover";
+import { coverSvg, renderCoverPng } from "@/lib/generate/cover";
+import path from "path";
 
 export async function GET(req: Request, { params }: { params: { id: string } }) {
   const auth = await requireUser(req);

@@ -12,7 +12,18 @@ export async function POST(req: Request, { params }: { params: { id: string; idx
   const idx = Number(params.idx);
   if (!Number.isInteger(idx) || idx < 0 || idx >= ebook.outline.length) return bad("Chapter not found", 404);
 
-  let body: { action?: string; instruction?: string; language?: string } = {};
+  let body: {
+    action?: string;
+    instruction?: string;
+    language?: string;
+    imageKind?: string;
+    imageId?: string;
+    caption?: string;
+    credit?: string;
+    alt?: string;
+    url?: string;
+    placement?: string;
+  } = {};
   try {
     body = await req.json();
   } catch {
@@ -23,6 +34,106 @@ export async function POST(req: Request, { params }: { params: { id: string; idx
   if (action === "regenerate") {
     const ch = await regenerateChapter(ebook.id, idx, body.instruction);
     return json({ chapter: ch });
+  }
+
+  if (
+    action === "add-image" ||
+    action === "replace-image" ||
+    action === "remove-image" ||
+    action === "update-image"
+  ) {
+    const chapter = ebook.chapters[idx] || {
+      id: ebook.outline[idx].id,
+      index: idx,
+      title: ebook.outline[idx].title,
+      learningObjectives: [],
+      sections: [],
+      keyPoints: [],
+      examples: [],
+      commonMistakes: [],
+      summary: "",
+      questions: [],
+      mcqs: [],
+      images: [],
+      sourceIds: [],
+      wordCount: 0,
+      status: "pending" as const,
+    };
+    const { nanoid } = await import("nanoid");
+    const { buildChapterVisuals, imageActionMeta, insertFiguresIntoChapter } = await import(
+      "@/lib/generate/images"
+    );
+    if (action === "remove-image") {
+      chapter.images = (chapter.images || []).filter((img) => img.id !== body.imageId && img.url !== body.url);
+    } else if (action === "update-image") {
+      chapter.images = (chapter.images || []).map((img) =>
+        img.id === body.imageId || img.url === body.url
+          ? {
+              ...img,
+              caption: body.caption ?? img.caption,
+              credit: body.credit ?? img.credit,
+              alt: body.alt ?? img.alt,
+              placement: (body.placement as any) || img.placement,
+            }
+          : img
+      );
+    } else {
+      const kind = (body.imageKind || "illustration") as
+        | "verified"
+        | "illustration"
+        | "map"
+        | "timeline"
+        | "infographic"
+        | "comparison";
+      const meta = imageActionMeta(kind, idx, chapter.title, ebook.outputLanguage || ebook.language);
+      if (kind === "verified" && body.url && /^https?:\/\//i.test(body.url)) {
+        const img = {
+          id: nanoid(8),
+          url: body.url,
+          caption: body.caption || meta.caption,
+          credit: body.credit || meta.credit,
+          alt: body.alt || meta.alt,
+          license: "Source URL provided by editor",
+          sourceUrl: body.url,
+          imageType: meta.imageType,
+          verifiedHistoricalPhoto: true,
+          chapterIndex: idx,
+          figureLabel: meta.caption,
+        };
+        if (action === "replace-image" && body.imageId) {
+          chapter.images = (chapter.images || []).map((x) => (x.id === body.imageId ? img : x));
+        } else {
+          chapter.images = [...(chapter.images || []), img];
+        }
+      } else {
+        const visuals = await buildChapterVisuals({
+          ebookId: ebook.id,
+          chapterIndex: idx,
+          item: ebook.outline[idx],
+          lang: ebook.outputLanguage || ebook.language,
+          commons: [],
+          includeImages: true,
+        });
+        const pick = visuals.find((v) => v.imageType === meta.imageType) || visuals[0];
+        if (pick) {
+          if (action === "replace-image" && body.imageId) {
+            chapter.images = (chapter.images || []).map((x) => (x.id === body.imageId ? pick : x));
+          } else {
+            chapter.images = [...(chapter.images || []), pick];
+          }
+        }
+      }
+    }
+    chapter.sections = chapter.sections.map((s) => ({
+      ...s,
+      html: s.html.replace(/<figure class="ebook-figure"[\s\S]*?<\/figure>/g, ""),
+    }));
+    insertFiguresIntoChapter(chapter, ebook.outputLanguage || ebook.language);
+    const chapters = ebook.chapters.slice();
+    chapters[idx] = chapter;
+    saveChapters(ebook.id, chapters);
+    updateEbook(ebook.id, { chapters });
+    return json({ chapter, ebookId: ebook.id });
   }
 
   const chapter = ebook.chapters[idx];

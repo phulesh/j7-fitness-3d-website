@@ -77,6 +77,18 @@ export async function exportEpub(doc: EbookDocument, destPath: string): Promise<
         ? `<h2>${esc(labels.objectives)}</h2><ul>${ch.learningObjectives.map((o) => `<li>${esc(o)}</li>`).join("")}</ul>`
         : "",
       ...ch.sections.map((s) => `<h2>${esc(s.heading)}</h2>${s.html}`),
+      ...(ch.images || []).length
+        ? ch.images
+            .map(
+              (img) =>
+                `<figure class="ebook-figure"><img src="${esc(img.url)}" alt="${esc(img.alt)}"/><figcaption><strong>${esc(
+                  img.figureLabel || img.caption
+                )}</strong> — ${esc(img.credit)}${
+                  img.verifiedHistoricalPhoto === false ? "<br/>व्याख्यात्मक चित्रण — ऐतिहासिक फोटोग्राफ नहीं" : ""
+                }</figcaption></figure>`
+            )
+            .join("")
+        : "",
       ch.keyPoints.length ? `<h2>${esc(labels.keyPoints)}</h2><ul>${ch.keyPoints.map((k) => `<li>${esc(k)}</li>`).join("")}</ul>` : "",
       ch.examples.length ? `<h2>${esc(labels.examples)}</h2><ul>${ch.examples.map((k) => `<li>${esc(k)}</li>`).join("")}</ul>` : "",
       ch.commonMistakes.length ? `<h2>${esc(labels.mistakes)}</h2><ul>${ch.commonMistakes.map((k) => `<li>${esc(k)}</li>`).join("")}</ul>` : "",
