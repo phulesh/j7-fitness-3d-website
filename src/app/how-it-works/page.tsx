@@ -30,14 +30,23 @@ export default function HowPage() {
           </ol>
           <h2>Pipeline</h2>
           <p>
-            Topic analysis → search query generation → web research → source collection → quality scoring → fact extraction →
-            cross-check → outline → chapter writing → citation mapping → review → PDF / DOCX / EPUB.
+            Topic analysis → focused search queries → web research → snippet/content inspection → relevance scoring (0–100) →
+            reject below 70 → authority scoring → fact extraction → cross-check → topic-locked outline → chapter writing →
+            citation mapping → review → PDF / DOCX / EPUB.
+          </p>
+          <h2>Relevance gate</h2>
+          <p>
+            Every hit is judged against the original topic, the generated research questions, and the chapter plan. Titles
+            alone are never enough. Unrelated biography dumps, entertainment homonyms, and off-topic scientific papers
+            (including arXiv physics results on a historical question) are rejected automatically. Writing is blocked if the
+            approved list is still contaminated or too thin.
           </p>
           <h2>What we will not do</h2>
           <p>
             We will not reproduce a copyrighted book from its title. If you enter a novel or trade book, Folio writes an
             original study guide. We will not invent statistics, researchers, or URLs. Thin evidence is labelled “Information
-            could not be independently verified.”
+            could not be independently verified.” Historical hypotheses are labelled as interpretation or as contested, not as
+            universally established fact.
           </p>
           <h2>Optional AI</h2>
           <p>

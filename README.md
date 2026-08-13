@@ -6,7 +6,9 @@ This is not a mock. The source list is the set of URLs the server actually retri
 
 ## Pipeline
 
-User topic → topic analysis → search queries → web research → source ranking → fact extraction → cross-check → outline → chapter writing → citations → fact/quality review → PDF / DOCX / EPUB.
+User topic → topic analysis → focused search queries → web research → snippet/content inspection → relevance filter (≥70) → authority scoring → fact extraction → cross-check → topic-locked outline → chapter writing → citations → fact/quality review → PDF / DOCX / EPUB.
+
+Unrelated hits (generic biography dumps, entertainment homonyms, off-topic arXiv physics papers, etc.) are rejected before they can become chapters or citations. Writing is blocked if research remains contaminated.
 
 ## Stack
 

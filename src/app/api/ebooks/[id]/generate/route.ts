@@ -17,6 +17,14 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     body = {};
   }
 
+  if ((body.fromOutline || ebook.status === "awaiting_outline") && ebook.researchQuality?.generationBlocked) {
+    return bad(
+      ebook.researchQuality.contaminationReason ||
+        "Research contains unrelated sources. Re-run research before writing the ebook.",
+      409
+    );
+  }
+
   const job = createJob(ebook.id, auth.user.id);
   if (body.fromOutline || ebook.status === "awaiting_outline") {
     continueFromOutline(ebook.id, job.id).catch((e) => console.error(e));

@@ -80,24 +80,18 @@ async function generateEbook(ebookId: string, jobId: string, opts: { resume?: bo
     progress("researching", 20, "Finding reliable sources...", "researching", msg);
   });
 
-  if (bundle.insufficient) {
-    const msg = bundle.message || "Not enough reliable information was found to create a factual ebook.";
-    updateEbook(ebookId, {
-      status: "failed",
-      error: msg,
-      sources: bundle.sources,
-      progress: { step: "failed", percent: 0, message: msg },
-    });
-    updateJob(jobId, { status: "failed", message: msg, error: msg });
-    return;
-  }
-
   progress("outlining", 38, "Creating ebook structure...", "outlining");
 
   const syllabus = doc.syllabus?.detected ? doc.syllabus : bundle.syllabusFromWeb;
   const outline = doc.outline.length
     ? doc.outline
     : buildOutlineFromResearch(doc.settings, analysis, bundle, syllabus);
+
+  const blocked = bundle.researchQuality?.generationBlocked || bundle.insufficient;
+  const blockMsg =
+    bundle.researchQuality?.contaminationReason ||
+    bundle.message ||
+    "Research is not clean enough to write this ebook.";
 
   const cover = coverSvg({
     title: analysis.normalizedTitle,
@@ -120,27 +114,31 @@ async function generateEbook(ebookId: string, jobId: string, opts: { resume?: bo
     analysis,
     cover: { style: doc.settings.coverStyle, svg: cover, pngPath },
     sources: bundle.sources,
+    rejectedSources: bundle.rejectedSources,
+    researchQuality: bundle.researchQuality,
     facts: bundle.facts,
     title: analysis.normalizedTitle,
     subtitle: analysis.subtitle,
     language: analysis.outputLanguage,
     chapterCount: outline.length,
-    status: opts.skipOutlineWait ? "writing" : "awaiting_outline",
+    status: blocked ? "awaiting_outline" : opts.skipOutlineWait ? "writing" : "awaiting_outline",
+    error: blocked ? blockMsg : undefined,
     progress: {
-      step: opts.skipOutlineWait ? "writing" : "awaiting_outline",
+      step: blocked || !opts.skipOutlineWait ? "awaiting_outline" : "writing",
       percent: 45,
-      message: opts.skipOutlineWait ? "Writing chapters..." : "Outline ready — review structure",
-      detail: `${bundle.sources.length} sources · ${outline.length} chapters`,
+      message: blocked ? "Research quality gate — writing blocked" : opts.skipOutlineWait ? "Writing chapters..." : "Outline ready — review structure",
+      detail: `Research Quality: ${bundle.researchQuality.relevantCount} relevant sources / ${bundle.researchQuality.rejectedCount} rejected sources`,
     },
   });
   updateJob(jobId, {
-    status: opts.skipOutlineWait ? "running" : "paused",
-    step: opts.skipOutlineWait ? "writing" : "awaiting_outline",
+    status: "paused",
+    step: "awaiting_outline",
     percent: 45,
-    message: "Outline ready",
+    message: blocked ? "Research blocked" : "Outline ready",
+    error: blocked ? blockMsg : undefined,
   });
 
-  if (!opts.skipOutlineWait) return;
+  if (blocked || !opts.skipOutlineWait) return;
 
   const fresh = getEbook(ebookId);
   if (!fresh) return;
@@ -150,29 +148,65 @@ async function generateEbook(ebookId: string, jobId: string, opts: { resume?: bo
 export async function continueFromOutline(ebookId: string, jobId: string) {
   const doc = getEbook(ebookId);
   if (!doc || !doc.analysis) throw new Error("Research the topic first.");
+  if (doc.researchQuality?.generationBlocked) {
+    const msg =
+      doc.researchQuality.contaminationReason ||
+      "Research contains unrelated sources. Re-run research before writing the ebook.";
+    updateEbook(ebookId, {
+      status: "awaiting_outline",
+      error: msg,
+      progress: { step: "awaiting_outline", percent: 45, message: msg },
+    });
+    updateJob(jobId, { status: "paused", step: "awaiting_outline", message: msg, error: msg });
+    return;
+  }
   updateJob(jobId, { status: "running", step: "writing", percent: 48, message: "Writing chapters..." });
   updateEbook(ebookId, { status: "writing", progress: { step: "writing", percent: 48, message: "Writing chapters..." } });
 
+  const { buildTopicProfile } = await import("../research/relevance");
+  const profile = buildTopicProfile(doc.analysis.topic, {
+    category: doc.analysis.category,
+    type: doc.settings.type,
+  });
   const bundle = {
     sources: doc.sources,
+    rejectedSources: doc.rejectedSources || [],
+    researchQuality: doc.researchQuality,
     facts: doc.facts || [],
     wikiPages: [] as never[],
     images: [] as never[],
     insufficient: false,
+    profile,
   };
   // Re-run lightweight research if we don't have extracts
   const hasExtracts = doc.sources.some((s) => (s.extractedText || "").length > 200);
   if (!hasExtracts || !doc.sources.length) {
     const full = await runResearch(ebookId, doc.analysis, doc.settings);
+    if (full.researchQuality.generationBlocked) {
+      updateEbook(ebookId, {
+        status: "awaiting_outline",
+        sources: full.sources,
+        rejectedSources: full.rejectedSources,
+        researchQuality: full.researchQuality,
+        error: full.researchQuality.contaminationReason,
+        progress: {
+          step: "awaiting_outline",
+          percent: 45,
+          message: full.researchQuality.contaminationReason || "Research quality gate failed",
+        },
+      });
+      updateJob(jobId, {
+        status: "paused",
+        step: "awaiting_outline",
+        message: "Research blocked",
+        error: full.researchQuality.contaminationReason,
+      });
+      return;
+    }
     await writeChapters({ ...doc, sources: full.sources, facts: full.facts }, jobId, full);
     return;
   }
-  await writeChapters(doc, jobId, {
-    ...bundle,
-    wikiPages: [],
-    images: [],
-    insufficient: false,
-  } as any);
+  await writeChapters(doc, jobId, bundle as any);
 }
 
 async function writeRemaining(doc: EbookDocument, jobId: string) {

@@ -204,7 +204,11 @@ function hydrate(row: any, withChildren: boolean): EbookDocument {
     : [];
   const sources = withChildren
     ? (store.sources.filter((s) => s.ebookId === row.id) as SourceRecord[]).sort(
-        (a, b) => a.tier - b.tier || b.score - a.score
+        (a, b) =>
+          (b.relevanceScore ?? 0) - (a.relevanceScore ?? 0) ||
+          (b.authorityScore ?? 0) - (a.authorityScore ?? 0) ||
+          a.tier - b.tier ||
+          b.score - a.score
       )
     : [];
   return {
@@ -237,7 +241,14 @@ export function clientEbook(doc: EbookDocument) {
       score: s.score,
       used: s.used,
       language: s.language,
+      relevanceScore: s.relevanceScore,
+      authorityScore: s.authorityScore,
+      primarySource: s.primarySource,
+      academicSource: s.academicSource,
+      reasonForInclusion: s.reasonForInclusion,
     })),
+    rejectedSources: doc.rejectedSources || [],
+    researchQuality: doc.researchQuality,
     facts: doc.facts,
   };
 }
