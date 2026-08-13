@@ -36,6 +36,32 @@ function wrapLines(ctx: CanvasRenderingContext2D, text: string, x: number, y: nu
   if (line && used < maxLines) ctx.fillText(line, x, yy);
 }
 
+function stripHtml(html: string) {
+  return (html || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** Real `<img>` sources referenced by a page (figures inserted by the pipeline). */
+function pageImageSrcs(html: string): string[] {
+  return [...(html || "").matchAll(/<img[^>]+src="([^"]+)"/g)].map((m) => m[1]);
+}
+
+/** Draw an image contained within a box, preserving aspect ratio. */
+function drawContained(ctx: CanvasRenderingContext2D, img: HTMLImageElement, cx: number, cy: number, maxW: number, maxH: number) {
+  const scale = Math.min(maxW / img.naturalWidth, maxH / img.naturalHeight);
+  const w = img.naturalWidth * scale;
+  const h = img.naturalHeight * scale;
+  ctx.drawImage(img, cx - w / 2, cy - h / 2, w, h);
+}
+
 function pageTexture(page: BookPage, coverSvg?: string): THREE.CanvasTexture {
   const w = 768;
   const h = 1152;
@@ -43,6 +69,15 @@ function pageTexture(page: BookPage, coverSvg?: string): THREE.CanvasTexture {
   canvas.width = w;
   canvas.height = h;
   const ctx = canvas.getContext("2d")!;
+
+  const srcs = pageImageSrcs(page.html);
+  const figures = page.kind !== "cover" ? srcs.slice(0, 3) : [];
+  // Reserve a band at the bottom of the page for real figure images so the
+  // body text never overlaps them.
+  const figureBand = figures.length ? 520 : 0;
+  const figTop = 540;
+  const textBottom = h - 60 - figureBand;
+
   ctx.fillStyle = "#FBF6EC";
   ctx.fillRect(0, 0, w, h);
   ctx.fillStyle = "rgba(28,20,16,0.03)";
@@ -51,6 +86,7 @@ function pageTexture(page: BookPage, coverSvg?: string): THREE.CanvasTexture {
   ctx.strokeRect(28, 28, w - 56, h - 56);
 
   if (page.kind === "cover") {
+    // Dark cover board; the generated cover artwork is drawn over it below.
     ctx.fillStyle = "#2A1C16";
     ctx.fillRect(0, 0, w, h);
     ctx.strokeStyle = "#D4BC6E";
@@ -62,18 +98,10 @@ function pageTexture(page: BookPage, coverSvg?: string): THREE.CanvasTexture {
     ctx.fillStyle = "#F6F0E6";
     ctx.font = "bold 48px Georgia, 'Noto Sans Devanagari', serif";
     wrapLines(ctx, page.title, 72, 280, w - 144, 58, 5);
-    const plain = page.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const subtitle = stripHtml(page.html).slice(page.title.length).trim();
     ctx.fillStyle = "#C4B09A";
     ctx.font = "22px Georgia, 'Noto Sans Devanagari', serif";
-    wrapLines(ctx, plain.slice(page.title.length).trim(), 72, 620, w - 144, 32, 6);
-    if (coverSvg) {
-      try {
-        const img = new Image();
-        img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(coverSvg)}`;
-      } catch {
-        /* canvas fallback already drawn */
-      }
-    }
+    wrapLines(ctx, subtitle, 72, 620, w - 144, 32, 6);
   } else {
     ctx.fillStyle = "#9A7B2F";
     ctx.font = "16px Figtree, system-ui, sans-serif";
@@ -81,10 +109,12 @@ function pageTexture(page: BookPage, coverSvg?: string): THREE.CanvasTexture {
     ctx.fillStyle = "#1C1410";
     ctx.font = "bold 32px Georgia, 'Noto Sans Devanagari', serif";
     wrapLines(ctx, page.title, 64, 130, w - 128, 40, 3);
-    const body = page.html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    const body = stripHtml(page.html);
     ctx.font = "22px 'Noto Sans Devanagari', Georgia, serif";
     ctx.fillStyle = "#2A1F18";
-    wrapLines(ctx, body, 64, 260, w - 128, 32, 24);
+    // Leave room for figures when present.
+    const maxLines = figures.length ? 8 : 24;
+    wrapLines(ctx, body, 64, 260, w - 128, 32, maxLines);
     ctx.fillStyle = "#8A7560";
     ctx.font = "14px system-ui";
     ctx.fillText(page.pageLabel, w / 2 - 10, h - 48);
@@ -94,6 +124,35 @@ function pageTexture(page: BookPage, coverSvg?: string): THREE.CanvasTexture {
   tex.anisotropy = 8;
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.needsUpdate = true;
+
+  // Draw the real image assets asynchronously. If an image is missing we
+  // simply skip it — never a placeholder rectangle.
+  if (page.kind === "cover" && coverSvg) {
+    const img = new Image();
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0, w, h);
+      tex.needsUpdate = true;
+    };
+    img.onerror = () => {
+      /* keep the fallback cover design */
+    };
+    img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(coverSvg)}`;
+  } else if (figures.length) {
+    const slotH = (textBottom - figTop) / figures.length;
+    figures.forEach((src, i) => {
+      const img = new Image();
+      img.onload = () => {
+        const cy = figTop + slotH * i + slotH / 2;
+        drawContained(ctx, img, w / 2, cy, w - 128, slotH - 24);
+        tex.needsUpdate = true;
+      };
+      img.onerror = () => {
+        /* skip missing image; no placeholder */
+      };
+      img.src = src;
+    });
+  }
+
   return tex;
 }
 
