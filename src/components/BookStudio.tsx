@@ -127,7 +127,8 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${(doc?.title || "ebook").replace(/\s+/g, "-")}.${format}`;
+      const suffix = format === "3d" ? "-3D-Ebook.zip" : format === "html" ? "-Interactive-HTML.zip" : `.${format}`;
+      a.download = `${(doc?.title || "ebook").replace(/\s+/g, "-")}${suffix}`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e: any) {
@@ -266,14 +267,17 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
           <button className="btn-ghost !py-2" disabled={!!busy} onClick={runFactCheck}>
             {busy === "fact" ? "Checking…" : "Fact Check"}
           </button>
-          <button className="btn-gold !py-2" disabled={!!busy} onClick={() => download("pdf")}>
-            PDF
+          <button className="btn-gold !py-2" disabled={!!busy} onClick={() => download("3d")}>
+            📖 Download 3D Ebook
           </button>
-          <button className="btn-ghost !py-2" disabled={!!busy} onClick={() => download("docx")}>
-            DOCX
+          <button className="btn-ghost !py-2" disabled={!!busy} onClick={() => download("pdf")}>
+            ⬇ Download PDF
           </button>
           <button className="btn-ghost !py-2" disabled={!!busy} onClick={() => download("epub")}>
-            EPUB
+            📱 EPUB
+          </button>
+          <button className="btn-ghost !py-2" disabled={!!busy} onClick={() => download("docx")}>
+            📝 DOCX
           </button>
         </div>
       </div>
@@ -305,7 +309,7 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
       )}
 
       <div className="mt-6 flex gap-2 overflow-auto pb-2">
-        {TABS.map((t) => (
+        {(tab === "3d" ? TABS.filter((t) => t.id === "3d") : TABS).map((t) => (
           <button
             key={t.id}
             onClick={() => go(t.id)}
@@ -853,6 +857,20 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
 
       {doc && tab === "3d" && (
         <div className="mt-6">
+          {doc.status === "complete" && (
+            <section className="mb-5 rounded-2xl border border-verified/30 bg-verified/10 p-5">
+              <p className="font-display text-2xl text-verified">✅ Ebook Ready</p>
+              <p className="mt-1 text-sm text-ink-400">{doc.title} · {doc.settings.authorName || "Folio Research"} · {pages.length} pages · {doc.chapterCount} chapters · {doc.sources.length} sources · Created {new Date(doc.createdAt).toLocaleDateString()}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Link className="btn-gold" href={`/ebooks/${ebookId}/3d`}>📖 Read 3D Book</Link>
+                <button className="btn-ghost" disabled={!!busy} onClick={() => download("3d")}>⬇ Download 3D Ebook</button>
+                <button className="btn-ghost" disabled={!!busy} onClick={() => download("pdf")}>⬇ Download PDF</button>
+                <button className="btn-ghost" disabled={!!busy} onClick={() => download("html")}>🌐 Interactive HTML</button>
+                <button className="btn-ghost" disabled={!!busy} onClick={() => download("epub")}>📱 EPUB</button>
+                <button className="btn-ghost" disabled={!!busy} onClick={() => download("docx")}>📝 DOCX</button>
+              </div>
+            </section>
+          )}
           <Book3D ebookId={ebookId} doc={doc} pages={pages} coverSvg={doc.cover?.svg} />
         </div>
       )}

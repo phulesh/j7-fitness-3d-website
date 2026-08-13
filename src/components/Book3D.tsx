@@ -168,6 +168,8 @@ export function Book3D({
   const [mode, setMode] = useState<"3d" | "read">("3d");
   const [webgl, setWebgl] = useState(true);
   const [toc, setToc] = useState(false);
+  const [query, setQuery] = useState("");
+  const [bookmarks, setBookmarks] = useState<number[]>([]);
   const host = useRef<HTMLDivElement>(null);
   const touchX = useRef<number | null>(null);
 
@@ -241,8 +243,12 @@ export function Book3D({
         onToc={() => setToc((v) => !v)}
         webgl={webgl}
       />
+      <div className="mb-3 flex flex-wrap items-center gap-2 text-sm">
+        <label className="relative"><span className="sr-only">Search inside book</span><input className="field !w-52 !py-2" value={query} onChange={(e) => setQuery(e.target.value)} placeholder="🔍 Search inside book" onKeyDown={(e) => { if (e.key === "Enter" && query.trim()) { const hit = pages.find((p) => `${p.title} ${p.html}`.toLowerCase().includes(query.toLowerCase())); if (hit) setLeaf(hit.index - (hit.index % 2)); } }} /></label>
+        <button className="btn-ghost !py-2" onClick={() => setBookmarks((items) => items.includes(leaf) ? items.filter((x) => x !== leaf) : [...items, leaf])}>{bookmarks.includes(leaf) ? "★ Bookmarked" : "☆ Bookmark"}</button>
+      </div>
       {toc && (
-        <div className="absolute left-3 top-16 z-10 max-h-[60vh] w-64 overflow-auto rounded-xl bg-paper-100/95 p-3 text-sm shadow-soft">
+        <div className="absolute left-3 top-28 z-10 max-h-[60vh] w-64 overflow-auto rounded-xl bg-paper-100/95 p-3 text-sm shadow-soft">
           {pages
             .filter((p, i) => p.kind !== "blank" && (i === 0 || p.title !== pages[i - 1]?.title))
             .map((p) => (
