@@ -45,8 +45,11 @@ export async function POST(req: Request, { params }: { params: { id: string } })
     flags,
     summary: {
       verified: flags.filter((f) => f.status === "verified").length,
-      needs_review: flags.filter((f) => f.status === "needs_review").length,
+      needs_review: flags.filter((f) => f.status === "needs_review" || f.status === "partial").length,
       unsupported: flags.filter((f) => f.status === "unsupported").length,
+      contested: flags.filter((f) => f.status === "contested").length,
+      supported: flags.filter((f) => f.displayStatus === "Supported").length,
+      partial: flags.filter((f) => f.displayStatus === "Partially supported").length,
     },
   });
 }

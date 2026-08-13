@@ -50,9 +50,84 @@ function countHits(text: string, words: string[]) {
   return words.reduce((n, w) => n + (text.includes(w) ? 1 : 0), 0);
 }
 
+const LANGUAGE_ALIASES: Record<string, string> = {
+  hindi: "hi",
+  "hi-in": "hi",
+  "hi_in": "hi",
+  हिन्दी: "hi",
+  हिंदी: "hi",
+  english: "en",
+  "en-us": "en",
+  "en-gb": "en",
+  spanish: "es",
+  french: "fr",
+  german: "de",
+  marathi: "mr",
+  bengali: "bn",
+  tamil: "ta",
+  telugu: "te",
+  gujarati: "gu",
+  kannada: "kn",
+  malayalam: "ml",
+  punjabi: "pa",
+  urdu: "ur",
+  nepali: "ne",
+  arabic: "ar",
+};
+
+export function normalizeOutputLanguage(input: string | undefined | null): string {
+  const raw = String(input || "").trim();
+  if (!raw) return "en";
+  const lower = raw.toLowerCase();
+  if (LANGUAGE_ALIASES[lower]) return LANGUAGE_ALIASES[lower];
+  if (raw.includes("हिन्दी") || raw.includes("हिंदी") || /hindi/i.test(raw)) return "hi";
+  const code = lower.split(/[-_]/)[0];
+  if (LANGUAGES.some((l) => l.code === code)) return code;
+  return code.slice(0, 8) || "en";
+}
+
 export function resolveOutputLanguage(selected: string, topic: string): string {
   if (!selected || selected === "auto") return detectScriptLanguage(topic);
-  return selected;
+  return normalizeOutputLanguage(selected);
+}
+
+export function isHindiOutput(code: string | undefined | null): boolean {
+  return normalizeOutputLanguage(code || "") === "hi";
+}
+
+const DEVANAGARI_RE = /[\u0900-\u097F]/g;
+const LATIN_LETTER_RE = /[A-Za-z]/g;
+const LETTER_RE = /\p{L}/gu;
+
+export function devanagariRatio(text: string): number {
+  const letters = text.match(LETTER_RE) || [];
+  if (!letters.length) return 0;
+  const dev = text.match(DEVANAGARI_RE) || [];
+  return dev.length / letters.length;
+}
+
+export function latinRatio(text: string): number {
+  const letters = text.match(LETTER_RE) || [];
+  if (!letters.length) return 0;
+  const lat = text.match(LATIN_LETTER_RE) || [];
+  return lat.length / letters.length;
+}
+
+export function isAcceptableHindi(text: string): boolean {
+  const sample = stripAllowedEnglish(text);
+  if (!sample.trim()) return true;
+  const ratio = devanagariRatio(sample);
+  const latin = latinRatio(sample);
+  if (ratio >= 0.42 && latin < 0.55) return true;
+  if (ratio >= 0.32 && (sample.match(DEVANAGARI_RE) || []).length >= 180) return true;
+  return false;
+}
+
+function stripAllowedEnglish(text: string): string {
+  return text
+    .replace(/https?:\/\/\S+/g, " ")
+    .replace(/\[[0-9]+\]/g, " ")
+    .replace(/\b[A-Z][A-Za-z.]+(?:\s+[A-Z][A-Za-z.]+){0,4}\b/g, " ");
 }
 
 export function languageName(code: string): string {

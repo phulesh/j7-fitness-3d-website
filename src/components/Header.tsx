@@ -76,8 +76,8 @@ export function Header() {
         <div className="border-t border-paper-300 bg-paper-100 px-4 py-4 md:hidden">
           <div className="flex flex-col gap-3 text-sm">
             <Link href="/#how">How it works</Link>
-            <Link href="/dashboard">My ebooks</Link>
-            <Link href="/create">New book</Link>
+            <Link href="/ebooks">My ebooks</Link>
+            <Link href="/ebooks/new">Create New Ebook</Link>
             {user && !user.isGuest ? (
               <button onClick={logout} className="text-left">
                 Sign out

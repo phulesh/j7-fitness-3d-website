@@ -1,0 +1,576 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { SettingsForm } from "./SettingsForm";
+import { ProgressPanel } from "./ProgressPanel";
+import { OutlineEditor } from "./OutlineEditor";
+import { ReadingView } from "./ReadingView";
+import { AutosaveIndicator } from "./AutosaveIndicator";
+import { ErrorBanner } from "./ErrorBanner";
+import { api } from "@/lib/client";
+import { useEbook } from "@/hooks/useEbook";
+import { displayStatus, type EbookSettings, type FactFlag, type OutlineItem } from "@/lib/types";
+import { buildBookPages } from "@/lib/book/pages";
+import dynamic from "next/dynamic";
+
+const Book3D = dynamic(() => import("./Book3D").then((m) => m.Book3D), {
+  ssr: false,
+  loading: () => <p className="p-6 text-ink-400">Opening the 3D press…</p>,
+});
+
+export type StudioTab =
+  | "cover"
+  | "settings"
+  | "contents"
+  | "research"
+  | "sources"
+  | "outline"
+  | "chapters"
+  | "references"
+  | "glossary"
+  | "preview"
+  | "3d";
+
+const TABS: { id: StudioTab; label: string }[] = [
+  { id: "cover", label: "Cover" },
+  { id: "settings", label: "Settings" },
+  { id: "contents", label: "Contents" },
+  { id: "research", label: "Research" },
+  { id: "sources", label: "Sources" },
+  { id: "outline", label: "Outline" },
+  { id: "chapters", label: "Chapters" },
+  { id: "references", label: "References" },
+  { id: "glossary", label: "Glossary" },
+  { id: "preview", label: "Preview" },
+  { id: "3d", label: "3D Book" },
+];
+
+export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }) {
+  const router = useRouter();
+  const { doc, setDoc, error, setError, saveState, busy, setBusy, load, patch, autosaveSettings } = useEbook(ebookId);
+  const [chIndex, setChIndex] = useState(0);
+  const [flags, setFlags] = useState<FactFlag[]>([]);
+  const [flagSummary, setFlagSummary] = useState<any>(null);
+  const [sourceUrl, setSourceUrl] = useState("");
+  const [rqText, setRqText] = useState("");
+
+  useEffect(() => {
+    if (doc) setRqText((doc.researchQuestions || doc.analysis?.researchQuestions || []).join("\n"));
+  }, [doc?.ebookId, doc?.researchQuestions, doc?.analysis?.researchQuestions]);
+
+  function go(next: StudioTab) {
+    const map: Record<StudioTab, string> = {
+      cover: `/ebooks/${ebookId}/edit?tab=cover`,
+      settings: `/ebooks/${ebookId}/edit?tab=settings`,
+      contents: `/ebooks/${ebookId}/edit?tab=contents`,
+      research: `/ebooks/${ebookId}/research`,
+      sources: `/ebooks/${ebookId}/edit?tab=sources`,
+      outline: `/ebooks/${ebookId}/outline`,
+      chapters: `/ebooks/${ebookId}/edit?tab=chapters`,
+      references: `/ebooks/${ebookId}/edit?tab=references`,
+      glossary: `/ebooks/${ebookId}/edit?tab=glossary`,
+      preview: `/ebooks/${ebookId}/read`,
+      "3d": `/ebooks/${ebookId}/3d`,
+    };
+    router.push(map[next]);
+  }
+
+  async function download(format: string) {
+    setBusy(`download-${format}`);
+    setError("");
+    try {
+      const res = await fetch(`/api/ebooks/${ebookId}/export?format=${format}`);
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}));
+        throw new Error(d.error || "Download failed");
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(doc?.title || "ebook").replace(/\s+/g, "-")}.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function startResearch() {
+    setBusy("research");
+    setError("");
+    try {
+      await patch({
+        settings: doc?.settings,
+        researchQuestions: rqText
+          .split(/\n/)
+          .map((s) => s.trim())
+          .filter(Boolean),
+        syllabus: doc?.syllabus,
+      });
+      await api(`/api/ebooks/${ebookId}/research`, { method: "POST", body: "{}" });
+      router.push(`/ebooks/${ebookId}/research`);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function writeFromOutline() {
+    if (!doc) return;
+    if (doc.researchQuality?.generationBlocked) return;
+    setBusy("write");
+    setError("");
+    try {
+      await patch({ outline: doc.outline });
+      await api(`/api/ebooks/${ebookId}/generate`, { method: "POST", body: JSON.stringify({ fromOutline: true }) });
+      router.push(`/ebooks/${ebookId}/edit?tab=chapters`);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function runFactCheck() {
+    setBusy("fact");
+    setError("");
+    try {
+      const data = await api(`/api/ebooks/${ebookId}/factcheck`, { method: "POST", body: "{}" });
+      setDoc(data.ebook);
+      setFlags(data.flags || []);
+      setFlagSummary(data.summary);
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function applyFixes() {
+    const apply = flags.filter((f) => f.suggestedFix).map((f) => f.id);
+    if (!apply.length) return;
+    setBusy("apply");
+    try {
+      const data = await api(`/api/ebooks/${ebookId}/factcheck`, {
+        method: "POST",
+        body: JSON.stringify({ apply, flags }),
+      });
+      setDoc(data.ebook);
+      setFlags((fs) => fs.map((f) => (apply.includes(f.id) ? { ...f, applied: true } : f)));
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function addSource() {
+    if (!sourceUrl.trim()) return;
+    setBusy("source");
+    try {
+      const data = await api(`/api/ebooks/${ebookId}/sources`, { method: "POST", body: JSON.stringify({ url: sourceUrl }) });
+      setDoc(data.ebook);
+      setSourceUrl("");
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function chapterAction(action: string, extra?: Record<string, unknown>) {
+    setBusy(action);
+    setError("");
+    try {
+      await api(`/api/ebooks/${ebookId}/chapter/${chIndex}`, {
+        method: "POST",
+        body: JSON.stringify({ action, ...extra }),
+      });
+      await load();
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  const generating = doc && !["complete", "failed", "draft", "awaiting_outline", "paused"].includes(doc.status);
+  const pages = useMemo(() => (doc ? buildBookPages(doc) : []), [doc]);
+  const chapter = doc?.chapters?.[chIndex];
+  const writingBlocked = Boolean(doc?.researchQuality?.generationBlocked);
+
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-8">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <p className="stamp text-gold-500">ebookId · {ebookId}</p>
+          <h1 className="font-display mt-3 text-3xl">{doc?.title || "Opening…"}</h1>
+          <p className="mt-1 text-sm text-ink-400">
+            {doc ? `${doc.outputLanguage || doc.language} · ${doc.type} · ${displayStatus(doc.status)} · ${doc.wordCount.toLocaleString()} words` : ""}
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <AutosaveIndicator state={saveState} />
+          <Link href="/ebooks" className="btn-ghost !py-2">
+            Back to library
+          </Link>
+          <button className="btn-ghost !py-2" disabled={!!busy} onClick={runFactCheck}>
+            {busy === "fact" ? "Checking…" : "Fact Check"}
+          </button>
+          <button className="btn-gold !py-2" disabled={!!busy} onClick={() => download("pdf")}>
+            PDF
+          </button>
+          <button className="btn-ghost !py-2" disabled={!!busy} onClick={() => download("docx")}>
+            DOCX
+          </button>
+          <button className="btn-ghost !py-2" disabled={!!busy} onClick={() => download("epub")}>
+            EPUB
+          </button>
+        </div>
+      </div>
+
+      <ErrorBanner message={error} onDismiss={() => setError("")} onRetry={() => load().catch(() => {})} />
+
+      {generating && (
+        <ProgressPanel
+          message={doc?.progress?.message || "Working…"}
+          detail={doc?.progress?.detail}
+          percent={doc?.progress?.percent || 10}
+          step={doc?.progress?.step}
+        />
+      )}
+
+      {doc?.status === "failed" && (
+        <div className="mt-4 rounded-xl border border-unsupported/30 p-4 text-sm">
+          {doc.error || "Generation interrupted. Your ebook data has been saved."}
+          <button
+            className="btn-gold ml-3 !py-1.5"
+            onClick={async () => {
+              await api(`/api/ebooks/${ebookId}/generate`, { method: "POST", body: JSON.stringify({ resume: true }) });
+              load();
+            }}
+          >
+            Resume
+          </button>
+        </div>
+      )}
+
+      <div className="mt-6 flex gap-2 overflow-auto pb-2">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            onClick={() => go(t.id)}
+            className={`whitespace-nowrap rounded-full px-4 py-2 text-sm min-h-[40px] ${
+              tab === t.id ? "bg-ink-700 text-paper-100" : "bg-paper-100 border border-paper-400"
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {!doc && <p className="mt-8 text-ink-400">Loading ebook {ebookId}…</p>}
+
+      {doc && tab === "cover" && (
+        <div className="mt-6 grid gap-6 md:grid-cols-[280px_1fr]">
+          <div
+            className="book-shadow mx-auto aspect-[2/3] w-full max-w-[280px] overflow-hidden rounded-sm bg-ink-700"
+            dangerouslySetInnerHTML={{
+              __html: (doc.cover?.svg || "").replace(/width="800" height="1200"/, 'viewBox="0 0 800 1200" width="100%" height="100%"'),
+            }}
+          />
+          <div className="space-y-4">
+            <p className="text-sm text-ink-400">
+              Cover uses the saved title, subtitle, author, and book type. Hindi titles render with Devanagari.
+            </p>
+            <button className="btn-line" onClick={() => patch({ title: doc.title, subtitle: doc.subtitle, regenerateCover: true })}>
+              Regenerate cover
+            </button>
+          </div>
+        </div>
+      )}
+
+      {doc && tab === "settings" && (
+        <section className="mt-6 paper-card rounded-2xl p-5 md:p-7">
+          <h2 className="font-display text-xl">Complete settings</h2>
+          <p className="mt-1 text-sm text-ink-400">Every saved field is restored. Changes autosave to this ebookId.</p>
+          <div className="mt-5">
+            <SettingsForm value={doc.settings} onChange={(s: EbookSettings) => autosaveSettings(s)} />
+          </div>
+          <label className="mt-6 block text-sm">
+            <span className="mb-1.5 block text-ink-400">Research questions</span>
+            <textarea
+              className="field min-h-[100px]"
+              value={rqText}
+              onChange={(e) => setRqText(e.target.value)}
+              onBlur={() =>
+                patch({
+                  researchQuestions: rqText
+                    .split(/\n/)
+                    .map((s) => s.trim())
+                    .filter(Boolean),
+                })
+              }
+            />
+          </label>
+          {doc.syllabus?.detected && (
+            <div className="mt-4 rounded-xl bg-forest-500/10 p-4 text-sm">
+              <p className="font-semibold">Syllabus saved</p>
+              <p>Subject: {doc.syllabus.subject || "—"}</p>
+              <p>
+                {doc.syllabus.units?.length || 0} unit(s)
+              </p>
+            </div>
+          )}
+          <div className="mt-6 flex flex-wrap gap-2">
+            <button className="btn-gold min-h-[48px]" disabled={!!busy} onClick={startResearch}>
+              {busy === "research" ? "Starting…" : "Run research"}
+            </button>
+            <button className="btn-ghost min-h-[48px]" onClick={() => go("outline")}>
+              Open outline
+            </button>
+          </div>
+        </section>
+      )}
+
+      {doc && tab === "contents" && (
+        <ol className="mt-6 space-y-2">
+          {doc.outline.map((o, i) => (
+            <li key={o.id}>
+              <button
+                className="paper-card w-full rounded-xl p-4 text-left"
+                onClick={() => {
+                  setChIndex(i);
+                  go("chapters");
+                }}
+              >
+                <span className="text-gold-500">{String(i + 1).padStart(2, "0")}</span>{" "}
+                <span className="font-display text-lg">{o.title}</span>
+                <p className="mt-1 text-sm text-ink-400">{o.summary}</p>
+              </button>
+            </li>
+          ))}
+          {!doc.outline.length && <p className="text-ink-400">No outline yet. Run research first.</p>}
+        </ol>
+      )}
+
+      {doc && tab === "research" && (
+        <section className="mt-6 space-y-5">
+          <div className="paper-card rounded-2xl p-5">
+            <h2 className="font-display text-xl">Research quality</h2>
+            <p className="mt-2">
+              {doc.researchQuality?.relevantCount ?? doc.sources.length} approved · {doc.researchQuality?.rejectedCount ?? (doc.rejectedSources || []).length} rejected
+            </p>
+            {writingBlocked && (
+              <p className="mt-3 text-sm text-unsupported">
+                {doc.researchQuality?.contaminationReason || "Not enough reliable sources were found."}
+              </p>
+            )}
+            <div className="mt-4 flex gap-2">
+              <button className="btn-gold" disabled={!!busy} onClick={startResearch}>
+                Re-run research
+              </button>
+              <button className="btn-ghost" onClick={() => go("outline")}>
+                Review outline
+              </button>
+            </div>
+          </div>
+          <div className="paper-card rounded-2xl p-5">
+            <h3 className="font-display text-lg">Research questions</h3>
+            <ul className="mt-3 list-disc pl-5 text-sm">
+              {(doc.researchQuestions || doc.analysis?.researchQuestions || []).map((q) => (
+                <li key={q}>{q}</li>
+              ))}
+            </ul>
+          </div>
+        </section>
+      )}
+
+      {doc && tab === "sources" && (
+        <section className="mt-6 grid gap-5 lg:grid-cols-2">
+          <div className="paper-card rounded-2xl p-5">
+            <h3 className="font-display text-lg">Approved sources</h3>
+            <ol className="mt-3 max-h-[28rem] space-y-2 overflow-auto text-sm">
+              {doc.sources.map((s) => (
+                <li key={s.id} className="border-b border-paper-300 pb-2">
+                  <span className="text-gold-500">[{s.id}]</span>{" "}
+                  <a href={s.url} target="_blank" rel="noreferrer" className="underline">
+                    {s.title}
+                  </a>
+                  <p className="text-ink-400">
+                    {s.organization} · rel {s.relevanceScore ?? "—"} · auth {s.authorityScore ?? "—"}
+                    {s.primarySource ? " · primary" : ""} {s.academicSource ? " · academic" : ""}
+                  </p>
+                </li>
+              ))}
+            </ol>
+            <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+              <input className="field" placeholder="Add a source URL" value={sourceUrl} onChange={(e) => setSourceUrl(e.target.value)} />
+              <button className="btn-gold" disabled={!!busy} onClick={addSource}>
+                Add
+              </button>
+            </div>
+          </div>
+          <div className="paper-card rounded-2xl p-5">
+            <h3 className="font-display text-lg">Rejected sources</h3>
+            <ol className="mt-3 max-h-[28rem] space-y-2 overflow-auto text-sm">
+              {(doc.rejectedSources || []).map((s, i) => (
+                <li key={`${s.url}-${i}`} className="border-b border-paper-300 pb-2">
+                  <span>{s.title}</span>
+                  <p className="text-unsupported">{s.rejectionReason}</p>
+                </li>
+              ))}
+              {!(doc.rejectedSources || []).length && <p className="text-ink-400">None rejected yet.</p>}
+            </ol>
+          </div>
+        </section>
+      )}
+
+      {doc && tab === "outline" && (
+        <section className="mt-6 paper-card rounded-2xl p-5">
+          <h2 className="font-display text-xl">Chapter outline</h2>
+          <p className="text-sm text-ink-400">Edit, reorder, add, or delete before writing. Saving updates this ebookId only.</p>
+          <div className="mt-4">
+            <OutlineEditor
+              value={doc.outline}
+              onChange={(outline: OutlineItem[]) => {
+                setDoc({ ...doc, outline });
+              }}
+            />
+          </div>
+          <div className="mt-5 flex flex-wrap gap-2">
+            <button className="btn-ghost" onClick={() => patch({ outline: doc.outline })}>
+              Save outline
+            </button>
+            <button className="btn-gold min-h-[48px]" disabled={!!busy || writingBlocked} onClick={writeFromOutline}>
+              {writingBlocked ? "Writing blocked" : busy === "write" ? "Starting…" : "Approve outline & write"}
+            </button>
+          </div>
+        </section>
+      )}
+
+      {doc && tab === "chapters" && chapter && (
+        <article className="mt-6 grid gap-6 lg:grid-cols-[1fr_220px]">
+          <div className="paper-card rounded-2xl p-5 md:p-8">
+            <p className="text-xs uppercase tracking-[0.18em] text-gold-500">Chapter {chapter.index + 1}</p>
+            <input
+              className="field mt-2 font-display text-2xl"
+              value={chapter.title}
+              onChange={(e) => {
+                const chapters = doc.chapters.map((c, i) => (i === chIndex ? { ...c, title: e.target.value } : c));
+                setDoc({ ...doc, chapters });
+              }}
+              onBlur={() => patch({ chapters: doc.chapters })}
+            />
+            {chapter.sections.map((s) => (
+              <section key={s.id} className="prose-ebook mt-6">
+                <input
+                  className="field mb-2"
+                  value={s.heading}
+                  onChange={(e) => {
+                    const chapters = doc.chapters.map((c, i) =>
+                      i === chIndex ? { ...c, sections: c.sections.map((x) => (x.id === s.id ? { ...x, heading: e.target.value } : x)) } : c
+                    );
+                    setDoc({ ...doc, chapters });
+                  }}
+                  onBlur={() => patch({ chapters: doc.chapters })}
+                />
+                <div dangerouslySetInnerHTML={{ __html: s.html }} />
+              </section>
+            ))}
+          </div>
+          <aside className="space-y-2">
+            {["regenerate", "improve", "simplify", "detail"].map((action) => (
+              <button key={action} disabled={!!busy} className="btn-ghost w-full !justify-start capitalize" onClick={() => chapterAction(action)}>
+                {busy === action ? "Working…" : action}
+              </button>
+            ))}
+            <div className="flex gap-2 pt-2">
+              <button className="btn-ghost flex-1" disabled={chIndex === 0} onClick={() => setChIndex((i) => i - 1)}>
+                Prev
+              </button>
+              <button className="btn-ghost flex-1" disabled={chIndex >= doc.chapters.length - 1} onClick={() => setChIndex((i) => i + 1)}>
+                Next
+              </button>
+            </div>
+          </aside>
+        </article>
+      )}
+
+      {doc && tab === "chapters" && !chapter && <p className="mt-6 text-ink-400">No chapters yet. Approve the outline to write.</p>}
+
+      {doc && tab === "references" && (
+        <section className="mt-6 paper-card rounded-2xl p-5">
+          <h2 className="font-display text-xl">References</h2>
+          <ol className="mt-4 space-y-3 text-sm">
+            {doc.sources.map((s) => (
+              <li key={s.id}>
+                [{s.id}] {s.title} — {s.organization}
+                {s.publishedAt ? ` (${s.publishedAt.slice(0, 4)})` : ""} —{" "}
+                <a className="underline" href={s.url} target="_blank" rel="noreferrer">
+                  {s.url}
+                </a>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
+      {doc && tab === "glossary" && (
+        <section className="mt-6 paper-card rounded-2xl p-5">
+          <h2 className="font-display text-xl">Glossary</h2>
+          <dl className="mt-4 space-y-3">
+            {doc.glossary.map((g) => (
+              <div key={g.term}>
+                <dt className="font-semibold">{g.term}</dt>
+                <dd className="text-sm text-ink-400">{g.definition}</dd>
+              </div>
+            ))}
+            {!doc.glossary.length && <p className="text-ink-400">Glossary appears after writing.</p>}
+          </dl>
+        </section>
+      )}
+
+      {doc && tab === "preview" && <div className="mt-6">{doc.chapters.length ? <ReadingView doc={doc} /> : <p>Write chapters to preview.</p>}</div>}
+
+      {doc && tab === "3d" && (
+        <div className="mt-6">
+          <Book3D ebookId={ebookId} doc={doc} pages={pages} coverSvg={doc.cover?.svg} />
+        </div>
+      )}
+
+      {flagSummary && (
+        <section className="mt-6 paper-card rounded-2xl p-5">
+          <h2 className="font-display text-xl">Fact check</h2>
+          <div className="mt-3 flex flex-wrap gap-3 text-sm">
+            <span className="rounded-full bg-verified/10 px-3 py-1 text-verified">Supported {flagSummary.verified || 0}</span>
+            <span className="rounded-full bg-review/10 px-3 py-1 text-review">Partial {flagSummary.needs_review || 0}</span>
+            <span className="rounded-full bg-review/10 px-3 py-1 text-review">Contested {flagSummary.contested || 0}</span>
+            <span className="rounded-full bg-unsupported/10 px-3 py-1 text-unsupported">Unsupported {flagSummary.unsupported || 0}</span>
+          </div>
+          <ul className="mt-4 max-h-64 space-y-3 overflow-auto text-sm">
+            {flags.map((f) => (
+              <li key={f.id} className="border-b border-paper-300 pb-2">
+                <strong>{f.displayStatus || f.status}</strong>
+                {f.classification ? ` · ${f.classification}` : ""}
+                <p className="mt-1">{f.claim}</p>
+                <p className="text-ink-400">{f.explanation}</p>
+              </li>
+            ))}
+          </ul>
+          {flags.some((f) => f.suggestedFix) && (
+            <button className="btn-line mt-4" disabled={!!busy} onClick={applyFixes}>
+              Apply suggested corrections
+            </button>
+          )}
+        </section>
+      )}
+    </div>
+  );
+}

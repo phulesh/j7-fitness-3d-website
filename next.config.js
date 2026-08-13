@@ -2,6 +2,7 @@
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
+  transpilePackages: ["three", "@react-three/fiber", "@react-three/drei"],
   experimental: {
     serverComponentsExternalPackages: ["sharp", "pdfkit"],
   },

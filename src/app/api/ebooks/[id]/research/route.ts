@@ -1,5 +1,5 @@
-import { createJob, getEbook } from "@/lib/ebooks";
-import { startGeneration } from "@/lib/generate/runner";
+import { createJob, getActiveJob, getEbook, getLatestJob } from "@/lib/ebooks";
+import { isRunning, startGeneration } from "@/lib/generate/runner";
 import { requireUser, json, bad, limit } from "@/lib/api";
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
@@ -9,7 +9,19 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (blocked) return blocked;
   const ebook = getEbook(params.id, auth.user.id);
   if (!ebook) return bad("Ebook not found", 404);
-  const job = createJob(ebook.id, auth.user.id);
+
+  const active = getActiveJob(ebook.id, "research") || (isRunning(ebook.id) ? getLatestJob(ebook.id) : null);
+  if (active && (active.status === "running" || active.status === "queued") && isRunning(ebook.id)) {
+    return json({
+      jobId: active.id,
+      ebookId: ebook.id,
+      status: "already-running",
+      reused: true,
+      message: "Research is already running for this ebook.",
+    });
+  }
+
+  const job = createJob(ebook.id, auth.user.id, "research");
   startGeneration(ebook.id, job.id, { skipOutlineWait: false });
-  return json({ jobId: job.id, status: "started" });
+  return json({ jobId: job.id, ebookId: ebook.id, status: "started" });
 }

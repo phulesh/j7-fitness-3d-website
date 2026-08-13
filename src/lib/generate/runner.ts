@@ -5,6 +5,9 @@ import { writeChapter, writeFrontMatter, countWords, flagsFromFacts, maybeChapte
 import { coverSvg, renderCoverPng } from "./cover";
 import { getEbook, updateEbook, saveChapter, updateJob } from "../ebooks";
 import type { Chapter, EbookDocument, OutlineItem } from "../types";
+import { isHindiOutput } from "../language";
+import { documentNeedsHindiRegen, ensureHindiChapter, localizeOutline } from "./hindi";
+import { friendlyError } from "../errors";
 
 const running = new Map<string, Promise<void>>();
 
@@ -13,19 +16,21 @@ export function startGeneration(ebookId: string, jobId: string, opts: { resume?:
   const p = generateEbook(ebookId, jobId, opts)
     .catch((err) => {
       console.error("Generation failed", err);
+      const raw = err instanceof Error ? err.message : "Generation interrupted.";
+      const message = friendlyError(raw);
       updateEbook(ebookId, {
         status: "failed",
-        error: err instanceof Error ? err.message : "Generation interrupted.",
+        error: message,
         progress: {
           step: "failed",
           percent: 0,
-          message: "Generation interrupted. Resume generation.",
-          detail: String(err),
+          message: "Generation interrupted. Your ebook data has been saved. Resume generation.",
+          detail: message,
         },
       });
       updateJob(jobId, {
         status: "failed",
-        error: err instanceof Error ? err.message : "failed",
+        error: message,
         message: "Generation interrupted. Resume generation.",
       });
     })
@@ -66,12 +71,20 @@ async function generateEbook(ebookId: string, jobId: string, opts: { resume?: bo
   }
 
   const analysis = await analyzeTopic(doc.settings);
+  const outputLanguage = isHindiOutput(doc.settings.outputLanguage || doc.settings.language)
+    ? "hi"
+    : analysis.outputLanguage;
+  analysis.outputLanguage = outputLanguage;
   updateEbook(ebookId, {
     analysis,
-    title: analysis.normalizedTitle,
-    subtitle: analysis.subtitle,
-    language: analysis.outputLanguage,
-    settings: { ...doc.settings, language: analysis.outputLanguage },
+    title: doc.settings.customTitle?.trim() || doc.settings.title?.trim() || analysis.normalizedTitle,
+    customTitle: doc.settings.customTitle || doc.settings.title,
+    subtitle: doc.settings.subtitle?.trim() || analysis.subtitle,
+    language: outputLanguage,
+    outputLanguage,
+    researchQuestions: analysis.researchQuestions || doc.researchQuestions || [],
+    lastCompletedStage: "settings",
+    settings: { ...doc.settings, language: outputLanguage, outputLanguage },
   });
 
   progress("researching", 12, "Finding reliable sources...", "researching", analysis.searchQueries.slice(0, 3).join(" · "));
@@ -83,9 +96,10 @@ async function generateEbook(ebookId: string, jobId: string, opts: { resume?: bo
   progress("outlining", 38, "Creating ebook structure...", "outlining");
 
   const syllabus = doc.syllabus?.detected ? doc.syllabus : bundle.syllabusFromWeb;
-  const outline = doc.outline.length
+  const rawOutline = doc.outline.length
     ? doc.outline
     : buildOutlineFromResearch(doc.settings, analysis, bundle, syllabus);
+  const outline = localizeOutline(rawOutline, outputLanguage);
 
   const blocked = bundle.researchQuality?.generationBlocked || bundle.insufficient;
   const blockMsg =
@@ -146,6 +160,27 @@ async function generateEbook(ebookId: string, jobId: string, opts: { resume?: bo
 }
 
 export async function continueFromOutline(ebookId: string, jobId: string) {
+  if (running.has(ebookId)) return;
+  const p = continueFromOutlineInner(ebookId, jobId)
+    .catch((err) => {
+      console.error("continueFromOutline failed", err);
+      updateEbook(ebookId, {
+        status: "failed",
+        error: friendlyError(err instanceof Error ? err.message : "Generation interrupted."),
+        progress: {
+          step: "failed",
+          percent: 0,
+          message: "Generation interrupted. Your ebook data has been saved. Resume generation.",
+        },
+      });
+      updateJob(jobId, { status: "failed", message: "Generation interrupted. Resume generation." });
+    })
+    .finally(() => running.delete(ebookId));
+  running.set(ebookId, p);
+  return p;
+}
+
+async function continueFromOutlineInner(ebookId: string, jobId: string) {
   const doc = getEbook(ebookId);
   if (!doc || !doc.analysis) throw new Error("Research the topic first.");
   if (doc.researchQuality?.generationBlocked) {
@@ -281,6 +316,37 @@ async function writeChapters(doc: EbookDocument, jobId: string, bundle: any, sta
   const wordCount =
     countWords(matter.introduction + " " + matter.conclusion) + chapters.reduce((n, c) => n + (c?.wordCount || 0), 0);
 
+  const checkDoc = {
+    ...doc,
+    introduction: matter.introduction,
+    conclusion: matter.conclusion,
+    chapters,
+    glossary: doc.settings.includeGlossary ? matter.glossary : [],
+    language: doc.analysis.outputLanguage,
+    outputLanguage: doc.analysis.outputLanguage,
+    settings: doc.settings,
+  } as EbookDocument;
+  const langCheck = documentNeedsHindiRegen(checkDoc);
+  if (!langCheck.ok) {
+    for (const key of langCheck.sections) {
+      const m = key.match(/^chapter-(\d+)$/);
+      if (!m) continue;
+      const idx = Number(m[1]) - 1;
+      const item = outline[idx];
+      if (!item || !chapters[idx]) continue;
+      const ensured = await ensureHindiChapter(chapters[idx], {
+        item,
+        settings: doc.settings,
+        analysis: doc.analysis,
+        sources: bundle.sources || doc.sources,
+        facts: bundle.facts || doc.facts || [],
+      });
+      chapters[idx] = ensured.chapter;
+      saveChapter(doc.id, ensured.chapter);
+    }
+  }
+  const finalCheck = documentNeedsHindiRegen({ ...checkDoc, chapters });
+
   updateEbook(doc.id, {
     status: "complete",
     introduction: matter.introduction,
@@ -291,6 +357,13 @@ async function writeChapters(doc: EbookDocument, jobId: string, bundle: any, sta
     chapters,
     wordCount,
     chapterCount: chapters.length,
+    lastCompletedStage: "complete",
+    languageCheck: {
+      expected: doc.analysis.outputLanguage,
+      passed: finalCheck.ok,
+      regeneratedSections: langCheck.sections,
+      detail: finalCheck.ok ? undefined : "Some sections were rewritten to match the selected output language.",
+    },
     progress: { step: "complete", percent: 100, message: "Preparing download..." },
     error: undefined,
   });

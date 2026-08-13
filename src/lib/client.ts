@@ -5,15 +5,24 @@ export async function ensureSession() {
   return guest.user;
 }
 
+import { friendlyError } from "./errors";
+
 export async function api<T = any>(url: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...init,
-    headers: {
-      "Content-Type": "application/json",
-      ...(init?.headers || {}),
-    },
-  });
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...init,
+      headers: {
+        "Content-Type": "application/json",
+        ...(init?.headers || {}),
+      },
+    });
+  } catch (e: any) {
+    throw new Error(friendlyError({ message: e?.message || "network" }));
+  }
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
+  if (!res.ok) {
+    throw new Error(friendlyError({ status: res.status, message: data.error || `Request failed (${res.status})` }));
+  }
   return data as T;
 }

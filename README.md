@@ -12,7 +12,7 @@ Unrelated hits (generic biography dumps, entertainment homonyms, off-topic arXiv
 
 ## Stack
 
-- Next.js 14 (App Router) + TypeScript + Tailwind
+- Next.js 14 (App Router) + TypeScript + Tailwind + Three.js 3D reader
 - JSON document store (`data/folio.json`) for users, ebooks, chapters, sources, jobs, downloads
 - httpOnly JWT sessions, bcrypt passwords, guest mode
 - Research: Wikipedia / Wikibooks, DuckDuckGo, Crossref, arXiv, Open Library, PubMed, Wikimedia Commons
@@ -58,3 +58,6 @@ Without paid keys, Folio still researches via Wikipedia, scholarly APIs, library
 
 - `npm run dev` — development server on `0.0.0.0:3000`
 - `npm run build` && `npm start` — production
+- `npm run test:upgrade` — ebookId uniqueness and Hindi output checks
+
+Workflow routes: `/ebooks`, `/ebooks/new`, `/ebooks/:ebookId/edit`, `/ebooks/:ebookId/research`, `/ebooks/:ebookId/outline`, `/ebooks/:ebookId/read`, `/ebooks/:ebookId/3d`. Create happens only on **Create New Ebook**; every later step updates that `ebookId`.

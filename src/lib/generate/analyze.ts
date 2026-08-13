@@ -10,7 +10,8 @@ const COPYRIGHT_HINTS =
 export async function analyzeTopic(settings: EbookSettings, syllabusText?: string): Promise<TopicAnalysis> {
   const topic = settings.topic.trim();
   const detectedLanguage = detectScriptLanguage(topic);
-  const outputLanguage = resolveOutputLanguage(settings.language, topic);
+  const chosen = settings.outputLanguage && settings.outputLanguage !== "auto" ? settings.outputLanguage : settings.language;
+  const outputLanguage = resolveOutputLanguage(chosen, topic);
   const category = categorize(topic, settings.type);
   const sensitive = sensitiveDomain(topic, category);
   const copyrightMode = isLikelyCopyrightedWork(topic, settings.type);

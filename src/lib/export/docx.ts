@@ -24,7 +24,7 @@ import { labelsFor } from "../generate/write";
 
 export async function exportDocx(doc: EbookDocument, destPath: string): Promise<string> {
   fs.mkdirSync(path.dirname(destPath), { recursive: true });
-  const labels = labelsFor(doc.language);
+  const labels = labelsFor(doc.outputLanguage || doc.language);
   const children: (Paragraph | Table)[] = [];
 
   children.push(new Paragraph({ text: doc.title, heading: HeadingLevel.TITLE }));
@@ -169,7 +169,13 @@ export async function exportDocx(doc: EbookDocument, destPath: string): Promise<
     styles: {
       default: {
         document: {
-          run: { font: "Calibri", size: 22 },
+          run: {
+            font:
+              doc.language === "hi" || doc.outputLanguage === "hi"
+                ? { ascii: "Noto Sans Devanagari", eastAsia: "Noto Sans Devanagari", cs: "Noto Sans Devanagari", hAnsi: "Noto Sans Devanagari" }
+                : "Calibri",
+            size: 22,
+          },
         },
       },
     },

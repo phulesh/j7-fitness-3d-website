@@ -4,7 +4,9 @@ import { EBOOK_TYPES, DIFFICULTIES, COVER_STYLES, AUDIENCES, STYLES } from "./ty
 export const settingsSchema = z.object({
   topic: z.string().trim().min(3).max(400),
   title: z.string().trim().max(200).optional(),
-  language: z.string().min(2).max(16).default("auto"),
+  customTitle: z.string().trim().max(200).optional(),
+  language: z.string().min(2).max(32).default("auto"),
+  outputLanguage: z.string().min(2).max(32).optional(),
   type: z.enum(EBOOK_TYPES).default("Educational Book"),
   audience: z.string().min(2).max(80).default("General readers"),
   difficulty: z.enum(DIFFICULTIES).default("Beginner"),
@@ -24,6 +26,7 @@ export const settingsSchema = z.object({
   authorName: z.string().max(80).default(""),
   coverStyle: z.enum(COVER_STYLES).default("Academic"),
   subtitle: z.string().max(240).optional(),
+  researchQuestions: z.array(z.string().max(400)).optional(),
 });
 
 export const registerSchema = z.object({
@@ -41,7 +44,13 @@ export const outlineSchema = z.array(
   z.object({
     id: z.string(),
     title: z.string().min(1).max(200),
-    summary: z.string().max(2000).default(""),
+    summary: z.string().max(4000).default(""),
+    purpose: z.string().max(2000).optional(),
+    researchQuestions: z.array(z.string().max(400)).optional(),
+    keyTopics: z.array(z.string().max(200)).optional(),
+    evidence: z.array(z.string().max(800)).optional(),
+    importantClaims: z.array(z.string().max(800)).optional(),
+    uncertaintyNotes: z.string().max(2000).optional(),
     sourceIds: z.array(z.number()).optional(),
     children: z
       .array(z.object({ title: z.string(), summary: z.string().optional().default("") }))

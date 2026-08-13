@@ -51,6 +51,9 @@ import type {
 import { nowIso, nextSourceId } from "../db";
 import { addResearch, replaceSources } from "../ebooks";
 import { fetchText } from "../http";
+import { isHindiOutput } from "../language";
+import { AMBEDKAR_HINDI_PLAN, HINDI_OUTLINE_TEMPLATES, localizeOutline } from "../generate/hindi";
+import { isAmbedkarUntouchablesTopic } from "./relevance";
 
 let liveWebCache: boolean | null = null;
 async function probeLiveWeb(): Promise<boolean> {
@@ -687,15 +690,30 @@ export function buildOutlineFromResearch(
     if (items.length >= 3) return normalizeOutlineCount(items, n, settings, analysis, bundle, profile);
   }
 
-  if (profile.chapterPlan?.length) {
-    const items = profile.chapterPlan.slice(0, n).map((ch) => ({
-      id: nanoid(8),
-      title: ch.title,
-      summary: ch.summary,
-      sourceIds: bundle.sources.filter((s) => (s.relevanceScore ?? 0) >= MIN_RELEVANCE).slice(0, 8).map((s) => s.id),
-      children: [],
-    }));
+  if (isHindiOutput(analysis.outputLanguage) && isAmbedkarUntouchablesTopic(analysis.topic)) {
+    const items = AMBEDKAR_HINDI_PLAN.slice(0, n).map((ch) =>
+      enrichOutlineItem({
+        id: nanoid(8),
+        title: ch.title,
+        summary: ch.summary,
+        sourceIds: bundle.sources.filter((s) => (s.relevanceScore ?? 0) >= MIN_RELEVANCE).slice(0, 8).map((s) => s.id),
+        children: [],
+      }, analysis, bundle)
+    );
     return withPedagogy(items, settings, analysis, profile);
+  }
+
+  if (profile.chapterPlan?.length) {
+    const items = profile.chapterPlan.slice(0, n).map((ch) =>
+      enrichOutlineItem({
+        id: nanoid(8),
+        title: ch.title,
+        summary: ch.summary,
+        sourceIds: bundle.sources.filter((s) => (s.relevanceScore ?? 0) >= MIN_RELEVANCE).slice(0, 8).map((s) => s.id),
+        children: [],
+      }, analysis, bundle)
+    );
+    return localizeOutline(withPedagogy(items, settings, analysis, profile), analysis.outputLanguage);
   }
 
   const fromWiki: OutlineItem[] = [];
@@ -895,7 +913,9 @@ function defaultOutline(
   };
   const cat = analysis.category;
   const useBiography = profile.allowBroadBiography && cat === "biography";
-  const base = useBiography ? templates.biography : templates[cat] || templates.default;
+  const hindi = isHindiOutput(analysis.outputLanguage);
+  const hiBase = hindi ? HINDI_OUTLINE_TEMPLATES[cat] || HINDI_OUTLINE_TEMPLATES.default : null;
+  const base = hiBase || (useBiography ? templates.biography : templates[cat] || templates.default);
   const titles = [...base];
   while (titles.length < n) {
     const term = terms[titles.length % Math.max(1, terms.length)];
@@ -904,10 +924,44 @@ function defaultOutline(
   return titles
     .filter((title) => !isBlockedOutlineTitle(title, profile))
     .slice(0, n)
-    .map((title) => ({
-      id: nanoid(8),
-      title,
-      summary: `Researched chapter covering ${title.toLowerCase()} for ${settings.audience}.`,
-      sourceIds: [],
-    }));
+    .map((title) =>
+      enrichOutlineItem(
+        {
+          id: nanoid(8),
+          title,
+          summary: hindi
+            ? `शोध-आधारित अध्याय: ${title} — पाठक: ${settings.audience}.`
+            : `Researched chapter covering ${title.toLowerCase()} for ${settings.audience}.`,
+          sourceIds: [],
+        },
+        analysis,
+        bundle
+      )
+    );
+}
+
+function enrichOutlineItem(item: OutlineItem, analysis: TopicAnalysis, bundle: ResearchBundle): OutlineItem {
+  const qs = (analysis.researchQuestions || []).filter((q) => {
+    const hay = `${item.title} ${item.summary}`.toLowerCase();
+    return q.toLowerCase().split(/\s+/).some((w) => w.length > 4 && hay.includes(w));
+  });
+  return {
+    ...item,
+    purpose: item.purpose || item.summary,
+    researchQuestions: item.researchQuestions?.length ? item.researchQuestions : qs.slice(0, 4),
+    keyTopics: item.keyTopics?.length ? item.keyTopics : item.children?.map((c) => c.title) || [],
+    evidence: item.evidence?.length
+      ? item.evidence
+      : bundle.facts
+          .filter((f) => item.title.toLowerCase().split(/\s+/).some((w) => w.length > 3 && f.text.toLowerCase().includes(w)))
+          .slice(0, 3)
+          .map((f) => f.text),
+    importantClaims: item.importantClaims || [],
+    uncertaintyNotes:
+      item.uncertaintyNotes ||
+      (analysis.topicKind === "named-work-inquiry"
+        ? "Author hypotheses in this chapter are labelled as interpretation, not established fact."
+        : undefined),
+    sourceIds: item.sourceIds?.length ? item.sourceIds : bundle.sources.slice(0, 6).map((s) => s.id),
+  };
 }

@@ -18,6 +18,17 @@ import type {
 } from "../types";
 import type { ResearchBundle } from "../research/pipeline";
 import { buildTopicProfile, claimKindLabel, classifyClaim } from "../research/relevance";
+import { isHindiOutput } from "../language";
+import { chapterPlain, countWords, escapeHtml, labelsFor } from "./text";
+import {
+  composeHindiChapter,
+  composeHindiFrontMatter,
+  ensureHindiChapter,
+  hindiWriterPromptAddon,
+  localizeTitle,
+} from "./hindi";
+
+export { chapterPlain, countWords, escapeHtml, labelsFor } from "./text";
 
 export function sourceListForPrompt(sources: SourceRecord[]): string {
   return sources
@@ -94,10 +105,35 @@ export async function writeChapter(opts: {
 }): Promise<Chapter> {
   const { index, item, settings, analysis, bundle, total } = opts;
   const { notes, sourceIds, images } = notesForChapter(item, bundle, settings);
+  const hindi = isHindiOutput(analysis.outputLanguage || settings.outputLanguage || settings.language);
 
   if (aiConfigured()) {
     const ai = await writeChapterWithAi({ index, item, settings, analysis, notes, sourceIds, total, images });
-    if (ai) return ai;
+    if (ai) {
+      if (hindi) {
+        const ensured = await ensureHindiChapter(ai, {
+          item,
+          settings,
+          analysis,
+          sources: bundle.sources,
+          facts: bundle.facts || [],
+        });
+        return ensured.chapter;
+      }
+      return ai;
+    }
+  }
+
+  if (hindi) {
+    return composeHindiChapter({
+      index,
+      item,
+      settings,
+      analysis,
+      sources: bundle.sources,
+      facts: bundle.facts || [],
+      images,
+    });
   }
   return writeChapterFromSources({ index, item, settings, analysis, bundle, notes, sourceIds, images });
 }
@@ -115,6 +151,7 @@ async function writeChapterWithAi(opts: {
   const { index, item, settings, analysis, notes, sourceIds, total, images } = opts;
   const lang = analysis.outputLanguage;
   const prompt = `Write Chapter ${index + 1} of ${total} for an ebook.
+${hindiWriterPromptAddon(lang)}
 
 Title: ${analysis.normalizedTitle}
 Chapter title: ${item.title}
@@ -199,7 +236,7 @@ function jsonToChapter(
   const ch: Chapter = {
     id: item.id,
     index,
-    title: String(parsed.title || item.title),
+    title: localizeTitle(String(parsed.title || item.title), settings.outputLanguage || settings.language || "en"),
     learningObjectives: arr(parsed.learningObjectives),
     sections: sections.length ? sections : [{ id: nanoid(8), heading: item.title, html: markdownToHtml(item.summary), sourceIds }],
     keyPoints: arr(parsed.keyPoints),
@@ -512,7 +549,19 @@ function renderAttributed(text: string, sourceIds: number[], analysis: TopicAnal
         .join(" ");
       const kind =
         profile.claimDiscipline === "historical-hypothesis" ? classifyClaim(body, profile) : undefined;
-      const tag = kind ? `<span class="claim-kind">${escapeHtml(claimKindLabel(kind))}.</span> ` : "";
+      const tag = kind
+        ? `<span class="claim-kind">${escapeHtml(
+            analysis.outputLanguage === "hi"
+              ? kind === "primary-source-evidence"
+                ? "प्राथमिक स्रोत साक्ष्य"
+                : kind === "author-interpretation"
+                  ? "लेखक की व्याख्या"
+                  : kind === "later-scholarly-interpretation"
+                    ? "परवर्ती विद्वानों की व्याख्या"
+                    : "विवादास्पद / अनिश्चित"
+              : claimKindLabel(kind)
+          )}.</span> `
+        : "";
       return `<p>${tag}${escapeHtml(body)}${i === 0 ? cite : ""}</p>`;
     })
     .join("");
@@ -728,27 +777,7 @@ export function markdownToHtml(md: string): string {
   return out.join("");
 }
 
-export function escapeHtml(s: string) {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
 
-export function chapterPlain(ch: Chapter): string {
-  return [
-    ch.title,
-    ...ch.learningObjectives,
-    ...ch.sections.map((s) => s.heading + " " + s.html.replace(/<[^>]+>/g, " ")),
-    ...ch.keyPoints,
-    ch.summary,
-  ].join(" ");
-}
-
-export function countWords(s: string) {
-  return (s.trim().match(/[\p{L}\p{N}]+/gu) || []).length;
-}
 
 export async function writeFrontMatter(opts: {
   settings: EbookSettings;
@@ -757,6 +786,15 @@ export async function writeFrontMatter(opts: {
   outline: OutlineItem[];
 }): Promise<{ introduction: string; conclusion: string; faqs: FaqItem[]; glossary: GlossaryEntry[]; disclaimer?: string }> {
   const { settings, analysis, bundle, outline } = opts;
+  if (isHindiOutput(analysis.outputLanguage || settings.outputLanguage || settings.language)) {
+    return composeHindiFrontMatter({
+      settings,
+      analysis,
+      sources: bundle.sources,
+      outline,
+      facts: bundle.facts || [],
+    });
+  }
   const src = bundle.sources.find((s) => s.extractedText.length > 200);
   const cite = src ? ` [${src.id}]` : "";
   const lead = bundle.wikiPages[0]?.extract
@@ -845,54 +883,7 @@ function titleCase(s: string) {
   return s.replace(/\b\w/g, (m) => m.toUpperCase());
 }
 
-export function labelsFor(lang: string) {
-  if (lang === "hi") {
-    return {
-      overview: "परिचय",
-      explanation: "व्याख्या",
-      subtopics: "उपविषय",
-      practice: "अभ्यास",
-      objectives: "अधिगम उद्देश्य",
-      keyPoints: "मुख्य बिंदु",
-      examples: "उदाहरण",
-      mistakes: "सामान्य भूलें",
-      summary: "सारांश",
-      questions: "प्रश्न",
-      mcqs: "बहुविकल्पीय प्रश्न",
-      answers: "उत्तर",
-      references: "संदर्भ",
-      glossary: "शब्दावली",
-      faq: "अक्सर पूछे जाने वाले प्रश्न",
-      conclusion: "निष्कर्ष",
-      introduction: "भूमिका",
-      toc: "विषय सूची",
-      sources: "स्रोत",
-      unverified: "स्वतंत्र रूप से सत्यापित नहीं किया जा सका",
-    };
-  }
-  return {
-    overview: "Overview",
-    explanation: "Explanation",
-    subtopics: "Related subtopics",
-    practice: "Practice note",
-    objectives: "Learning objectives",
-    keyPoints: "Key points",
-    examples: "Examples",
-    mistakes: "Common mistakes",
-    summary: "Chapter summary",
-    questions: "Review questions",
-    mcqs: "Multiple-choice questions",
-    answers: "Answers",
-    references: "References",
-    glossary: "Glossary",
-    faq: "Frequently asked questions",
-    conclusion: "Conclusion",
-    introduction: "Introduction",
-    toc: "Table of contents",
-    sources: "Sources",
-    unverified: "Information could not be independently verified",
-  };
-}
+
 
 export async function maybeChapterImages(title: string, enabled: boolean): Promise<ChapterImage[]> {
   if (!enabled) return [];

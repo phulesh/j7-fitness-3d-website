@@ -74,17 +74,45 @@ async function checkClaim(claim: string, doc: EbookDocument): Promise<FactFlag> 
   let status: FactFlag["status"] = "needs_review";
   if (support >= 2) status = "verified";
   else if (support === 0) status = "unsupported";
+  else status = "partial";
+
+  const contested = /hypothesis|may have|might have|alleged|uncertain|contested/i.test(claim);
+  if (contested && status !== "unsupported") status = "contested";
+
+  const displayStatus =
+    status === "verified"
+      ? "Supported"
+      : status === "contested"
+        ? "Contested"
+        : status === "unsupported"
+          ? "Unsupported"
+          : "Partially supported";
+
+  const classification = contested
+    ? "HYPOTHESIS"
+    : /according to|argues|proposed|interpretation/i.test(claim)
+      ? "INTERPRETATION"
+      : status === "unsupported"
+        ? "CONTROVERSY"
+        : "FACT";
 
   return {
     id,
     claim,
     status,
+    displayStatus,
+    classification,
+    confidence: Math.min(100, support * 28 + (localHits.length ? 20 : 0)),
+    evidence: localHits[0]?.snippet || localHits[0]?.title,
+    source: localHits.map((s) => s.title).slice(0, 3).join("; "),
     explanation:
       status === "verified"
         ? `Corroborated by ${support} source signal(s), including ${localHits.map((s) => s.organization).slice(0, 3).join(", ") || "live search"}.`
         : status === "unsupported"
           ? "No overlapping reliable source was found for this wording. Do not treat it as established fact."
-          : "Only weak overlap with collected sources. Review the claim or add a better citation.",
+          : status === "contested"
+            ? "This wording is contested or hypothetical. It is not presented as proven fact."
+            : "Only weak overlap with collected sources. Review the claim or add a better citation.",
     sourceIds: remoteIds.slice(0, 6),
     suggestedFix: status === "unsupported" ? `Information could not be independently verified: “${claim}”` : undefined,
   };
