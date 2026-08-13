@@ -3,6 +3,7 @@ import { webSearch } from "../research/search";
 import { extractReadable, splitSentences } from "../research/extract";
 import { wikiSearch, fetchWikiPage } from "../research/wikipedia";
 import { chat, aiConfigured, RESEARCH_WRITER_SYSTEM } from "../ai";
+import { probeLiveWeb } from "../research/liveweb";
 import type { EbookDocument, FactFlag, SourceRecord } from "../types";
 import { chapterPlain } from "./write";
 
@@ -52,18 +53,23 @@ async function checkClaim(claim: string, doc: EbookDocument): Promise<FactFlag> 
     for (const h of local) {
       if (overlap(claim, `${h.title} ${h.extract}`)) remoteSupport++;
     }
-    const q = claim.split(/\s+/).slice(0, 12).join(" ");
-    const wiki = await wikiSearch(q, doc.analysis?.wikiLanguage || "en", 3);
-    if (wiki[0]) {
-      const page = await fetchWikiPage(wiki[0].title, doc.analysis?.wikiLanguage || "en");
-      if (page && overlap(claim, page.extract)) remoteSupport++;
-    }
-    const web = await webSearch(q, { count: 4 });
-    for (const h of web.slice(0, 2)) {
-      if (overlap(claim, `${h.title} ${h.snippet}`)) remoteSupport++;
-      else {
-        const full = await extractReadable(h.url);
-        if (full && overlap(claim, full.text)) remoteSupport++;
+    // Skip live-web calls when the open web is unreachable from this host so
+    // fact-checking does not hang on repeated network timeouts. Local corpus
+    // and the ebook's own collected sources still provide verification signal.
+    if (await probeLiveWeb()) {
+      const q = claim.split(/\s+/).slice(0, 12).join(" ");
+      const wiki = await wikiSearch(q, doc.analysis?.wikiLanguage || "en", 3);
+      if (wiki[0]) {
+        const page = await fetchWikiPage(wiki[0].title, doc.analysis?.wikiLanguage || "en");
+        if (page && overlap(claim, page.extract)) remoteSupport++;
+      }
+      const web = await webSearch(q, { count: 4 });
+      for (const h of web.slice(0, 2)) {
+        if (overlap(claim, `${h.title} ${h.snippet}`)) remoteSupport++;
+        else {
+          const full = await extractReadable(h.url);
+          if (full && overlap(claim, full.text)) remoteSupport++;
+        }
       }
     }
   } catch {

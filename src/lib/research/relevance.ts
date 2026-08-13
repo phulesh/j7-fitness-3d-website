@@ -598,6 +598,19 @@ export function evaluateCandidate(
   }
   relevance += Math.min(36, contentHits.length * 7);
   relevance += Math.min(12, titleHits.length * 3);
+  // A title that matches the requested topic (exactly, or as a full phrase) is
+  // strong evidence of relevance when the inspected content also confirms the
+  // core terms. Without this, short topics whose profile has only one or two
+  // distinctive terms (e.g. "Artificial Intelligence") could never reach the
+  // inclusion threshold even for a perfect on-topic source.
+  const topicNorm = normalizeText(profile.topic);
+  const titleNorm = normalizeText(title);
+  const titleIsTopic =
+    titleNorm.length >= 4 &&
+    (titleNorm === topicNorm ||
+      (titleNorm.split(" ").length >= 2 && topicNorm.includes(titleNorm)) ||
+      (topicNorm.split(" ").length >= 2 && titleNorm.includes(topicNorm)));
+  if (titleIsTopic && contentHits.length >= 1) relevance += 30;
   relevance += Math.min(12, Math.floor(questionHits / 2) * 3);
   relevance += Math.min(8, Math.floor(outlineHits / 2) * 2);
   if (primary && contentHits.length >= 1) relevance += 8;

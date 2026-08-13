@@ -50,21 +50,10 @@ import type {
 } from "../types";
 import { nowIso, nextSourceId } from "../db";
 import { addResearch, replaceSources } from "../ebooks";
-import { fetchText } from "../http";
 import { isHindiOutput } from "../language";
 import { AMBEDKAR_HINDI_PLAN, HINDI_OUTLINE_TEMPLATES, localizeOutline } from "../generate/hindi";
 import { isAmbedkarUntouchablesTopic } from "./relevance";
-
-let liveWebCache: boolean | null = null;
-async function probeLiveWeb(): Promise<boolean> {
-  if (liveWebCache !== null) return liveWebCache;
-  const r = await fetchText("https://en.wikipedia.org/w/api.php?action=query&meta=siteinfo&format=json", {
-    timeoutMs: 2500,
-    retries: 0,
-  });
-  liveWebCache = Boolean(r.ok);
-  return liveWebCache;
-}
+import { probeLiveWeb } from "./liveweb";
 
 export interface ResearchBundle {
   sources: SourceRecord[];
