@@ -66,7 +66,29 @@ export function runUpgradeSelftest() {
   const listed = listEbooks(userId).filter((e) => e.id === first.id);
   checks.push({ name: "Update keeps one ebookId", ok: listed.length === 1 && updated?.ebookId === first.id, detail: updated?.ebookId });
   checks.push({ name: "ebookId equals id", ok: first.ebookId === first.id && getEbook(first.ebookId)?.id === first.id });
+
+  // Language persistence: a Hindi book must report settings.language === "hi"
+  // on hydration so the Edit dropdown never shows "Auto".
+  const hindiBook = createEbook(userId, { ...DEFAULT_SETTINGS, topic: "Hindi Persistence Topic", language: "hi", outputLanguage: "hi" });
+  const reloaded = getEbook(hindiBook.id);
+  checks.push({
+    name: "Hindi settings.language persists on hydrate",
+    ok: reloaded?.settings.language === "hi" && reloaded?.outputLanguage === "hi",
+    detail: `settings=${reloaded?.settings.language} out=${reloaded?.outputLanguage}`,
+  });
+
+  // User title survives a settings round-trip (must not revert to a derived title).
+  const titled = createEbook(userId, { ...DEFAULT_SETTINGS, topic: "Some Topic", language: "hi", customTitle: "अछूत कौन थे" });
+  const titledReloaded = getEbook(titled.id);
+  checks.push({
+    name: "Custom Hindi title preserved",
+    ok: titledReloaded?.title === "अछूत कौन थे",
+    detail: titledReloaded?.title,
+  });
+  deleteEbook(titled.id, userId);
+
   deleteEbook(first.id, userId);
+  deleteEbook(hindiBook.id, userId);
 
   return checks;
 }

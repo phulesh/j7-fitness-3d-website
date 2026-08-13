@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { SettingsForm } from "./SettingsForm";
@@ -11,7 +11,7 @@ import { AutosaveIndicator } from "./AutosaveIndicator";
 import { ErrorBanner } from "./ErrorBanner";
 import { api } from "@/lib/client";
 import { useEbook } from "@/hooks/useEbook";
-import { displayStatus, type EbookSettings, type FactFlag, type OutlineItem } from "@/lib/types";
+import { displayStatus, type EbookDocument, type EbookSettings, type FactFlag, type OutlineItem } from "@/lib/types";
 import { buildBookPages } from "@/lib/book/pages";
 import dynamic from "next/dynamic";
 
@@ -55,10 +55,44 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
   const [flagSummary, setFlagSummary] = useState<any>(null);
   const [sourceUrl, setSourceUrl] = useState("");
   const [rqText, setRqText] = useState("");
+  // Debounced autosave for the outline (requirement #8). We track the last
+  // saved outline by content so that server round-trips (which replace the doc
+  // object) do not trigger a save loop, and we never re-save the freshly loaded
+  // outline.
+  const outlineSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSavedOutline = useRef<string>("");
 
   useEffect(() => {
     if (doc) setRqText((doc.researchQuestions || doc.analysis?.researchQuestions || []).join("\n"));
+    // Re-seed the textarea only when the underlying research questions change,
+    // not on every doc refresh (which would clobber in-progress typing).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [doc?.ebookId, doc?.researchQuestions, doc?.analysis?.researchQuestions]);
+
+  // Debounced outline autosave: add / reorder / rename / edit-description all
+  // persist to the same ebookId without a manual save click.
+  useEffect(() => {
+    if (!doc) return;
+    const json = JSON.stringify(doc.outline);
+    if (json === lastSavedOutline.current) return;
+    // Skip the initial hydration so we never overwrite stored data.
+    if (!lastSavedOutline.current) {
+      lastSavedOutline.current = json;
+      return;
+    }
+    if (outlineSaveTimer.current) clearTimeout(outlineSaveTimer.current);
+    outlineSaveTimer.current = setTimeout(() => {
+      patch({ outline: doc.outline }, { silent: true })
+        .then((updated) => {
+          lastSavedOutline.current = JSON.stringify(updated?.outline ?? doc.outline);
+        })
+        .catch(() => {});
+    }, 900);
+    return () => {
+      if (outlineSaveTimer.current) clearTimeout(outlineSaveTimer.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [doc?.outline]);
 
   function go(next: StudioTab) {
     const map: Record<StudioTab, string> = {
@@ -214,6 +248,7 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
           <p className="mt-1 text-sm text-ink-400">
             {doc ? `${doc.outputLanguage || doc.language} · ${doc.type} · ${displayStatus(doc.status)} · ${doc.wordCount.toLocaleString()} words` : ""}
           </p>
+          {doc && <LanguageCheckBadge doc={doc} />}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <AutosaveIndicator state={saveState} />
@@ -572,5 +607,31 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
         </section>
       )}
     </div>
+  );
+}
+
+// Surfaces the output-language validation result (requirement #3). For a Hindi
+// book this reads "Hindi validation: PASSED" only when every section genuinely
+// satisfies the Devanagari requirement; otherwise it reports the sections that
+// were rewritten or still need attention. A non-Hindi book shows nothing, and a
+// book that has not been generated yet shows nothing.
+function LanguageCheckBadge({ doc }: { doc: EbookDocument }) {
+  const lang = doc.outputLanguage || doc.language;
+  if (!lang || lang === "auto") return null;
+  const check = doc.languageCheck;
+  if (!check) return null;
+  const langLabel = lang === "hi" ? "Hindi" : lang;
+  const passed = check.passed;
+  return (
+    <p className="mt-2 text-xs">
+      <span
+        className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 ${
+          passed ? "bg-verified/10 text-verified" : "bg-review/10 text-review"
+        }`}
+      >
+        {langLabel} validation: {passed ? "PASSED" : "REVIEW"}
+      </span>
+      {!passed && check.detail ? <span className="ml-2 text-ink-400">{check.detail}</span> : null}
+    </p>
   );
 }

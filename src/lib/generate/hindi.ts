@@ -296,7 +296,7 @@ function frameEnglishPassage(text: string, source: SourceRecord | undefined, ana
   return bits.join("");
 }
 
-function useIfHindi(text: string): string | null {
+function keepIfHindi(text: string): string | null {
   if (/[\u0900-\u097F]/.test(text) && isAcceptableHindi(text)) return text;
   if ((text.match(/[\u0900-\u097F]/g) || []).length > 40) return text;
   return null;
@@ -346,7 +346,7 @@ export function composeHindiChapter(opts: {
     html: relevantSources
       .slice(0, 3)
       .map((s) => {
-        const hi = useIfHindi(s.extractedText || s.snippet || "");
+        const hi = keepIfHindi(s.extractedText || s.snippet || "");
         if (hi) {
           const paras = hi
             .split(/\n{2,}/)
@@ -370,7 +370,7 @@ export function composeHindiChapter(opts: {
         .map((f) => {
           const kind = hindiClaimLabel(f.claimKind || "contested-uncertain");
           const cite = f.sourceIds.map((id) => `[${id}]`).join("");
-          const body = useIfHindi(f.text) || `स्रोत ${cite} से जुड़ा दावा: ${keepNames(f.text)}`;
+          const body = keepIfHindi(f.text) || `स्रोत ${cite} से जुड़ा दावा: ${keepNames(f.text)}`;
           return `<p><span class="claim-kind">${escapeHtml(kind)}.</span> ${escapeHtml(body)} ${cite}</p>`;
         })
         .join(""),
@@ -413,7 +413,7 @@ export function composeHindiChapter(opts: {
   });
 
   const keyPoints = [
-    ...relevantFacts.slice(0, 4).map((f) => (useIfHindi(f.text) || f.text) + (f.sourceIds[0] ? ` [${f.sourceIds[0]}]` : "")),
+    ...relevantFacts.slice(0, 4).map((f) => (keepIfHindi(f.text) || f.text) + (f.sourceIds[0] ? ` [${f.sourceIds[0]}]` : "")),
     `${title} को केवल एक वेबपेज से सिद्ध न मानें।`,
     "परिकल्पना और स्थापित तथ्य को अलग रखें।",
   ].slice(0, 8);
@@ -533,7 +533,7 @@ export function composeHindiFrontMatter(opts: {
     const term = f.entities[0] || f.text.split(/\s+/).slice(0, 3).join(" ");
     glossary.push({
       term,
-      definition: useIfHindi(f.text) || `स्रोत के अनुसार: ${f.text}`,
+      definition: keepIfHindi(f.text) || `स्रोत के अनुसार: ${f.text}`,
       sourceIds: f.sourceIds,
     });
   }

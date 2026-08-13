@@ -648,15 +648,13 @@ export function buildOutlineFromResearch(
   syllabus?: SyllabusInfo
 ): OutlineItem[] {
   const profile = bundle.profile || buildTopicProfile(analysis.topic, { category: analysis.category, type: settings.type });
+  // The user explicitly chooses the chapter count on the Create form (range
+  // 4–20). That choice must be the primary driver of the outline length; the
+  // curated profile only supplies candidate chapter titles. We never let a
+  // profile plan silently inflate the count far beyond what the user requested
+  // (e.g. requesting 6 chapters and receiving 14).
   const requested = settings.chapterCount || 10;
-  const n = profile.chapterPlan?.length && profile.targetChapterCount
-    ? Math.max(
-        profile.targetChapterCount.min,
-        Math.min(profile.targetChapterCount.max, profile.chapterPlan.length)
-      )
-    : profile.targetChapterCount
-      ? Math.max(profile.targetChapterCount.min, Math.min(profile.targetChapterCount.max, Math.max(requested, profile.targetChapterCount.min)))
-      : Math.max(4, Math.min(20, requested));
+  const n = Math.max(4, Math.min(20, requested));
 
   if (syllabus?.units?.length) {
     const items: OutlineItem[] = [];
