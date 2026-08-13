@@ -1,193 +1,65 @@
 "use client";
 
-import { Suspense, useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
-import { SettingsForm } from "@/components/SettingsForm";
 import { ErrorBanner } from "@/components/ErrorBanner";
-import { DEFAULT_SETTINGS, type EbookSettings, type SyllabusInfo } from "@/lib/types";
+import { DEFAULT_SETTINGS, LANGUAGES, LENGTHS, type EbookSettings, type SyllabusInfo } from "@/lib/types";
 import { api, ensureSession } from "@/lib/client";
-import { Upload } from "lucide-react";
+import { BookOpen, ChevronDown, FileUp, Sparkles } from "lucide-react";
 import { nanoid } from "nanoid";
 
-const DRAFT_KEY = "folio:create-draft";
+const DRAFT_KEY = "folio:simple-create-draft";
+const steps = ["Researching", "Building Outline", "Writing Chapters", "Fact Checking", "Designing Book", "Creating 3D Preview", "Ready"];
 
-function loadDraft(): EbookSettings {
-  // Persist the user's selected values across refresh, back navigation, and
-  // failed requests. Topic from the URL takes priority so shared links still
-  // pre-fill correctly. We never persist empty/default noise: if nothing was
-  // stored, fall back to defaults.
+function initialSettings(topic = ""): EbookSettings {
   try {
-    const raw = typeof window !== "undefined" ? window.localStorage.getItem(DRAFT_KEY) : null;
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === "object") {
-        return { ...DEFAULT_SETTINGS, ...parsed };
-      }
-    }
-  } catch {
-    /* storage unavailable — ignore */
-  }
-  return { ...DEFAULT_SETTINGS };
+    const saved = typeof window !== "undefined" ? localStorage.getItem(DRAFT_KEY) : null;
+    return { ...DEFAULT_SETTINGS, ...(saved ? JSON.parse(saved) : {}), topic: topic || (saved ? JSON.parse(saved).topic : "") };
+  } catch { return { ...DEFAULT_SETTINGS, topic }; }
 }
 
 function NewInner() {
-  const params = useSearchParams();
-  const router = useRouter();
-  const createKey = useRef(nanoid(16));
-  const creating = useRef(false);
-  const [settings, setSettings] = useState<EbookSettings>(() => {
-    const draft = loadDraft();
-    const topicParam = params.get("topic");
-    return { ...draft, topic: topicParam || draft.topic || "" };
-  });
-  const [syllabusText, setSyllabusText] = useState("");
-  const [syllabus, setSyllabus] = useState<SyllabusInfo | null>(null);
-  const [error, setError] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  // Keep the draft in sync with the user's selections so that refresh,
-  // accidental back navigation, or a failed create request never resets the
-  // form (including the chosen output language).
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(DRAFT_KEY, JSON.stringify(settings));
-    } catch {
-      /* ignore quota / private mode */
-    }
-  }, [settings]);
-
-  useEffect(() => {
-    ensureSession().catch(() => {});
-  }, []);
-
-  async function onUpload(file: File) {
-    setError("");
-    setBusy(true);
-    try {
-      await ensureSession();
-      const fd = new FormData();
-      fd.append("file", file);
-      const res = await fetch("/api/upload", { method: "POST", body: fd });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Upload failed");
-      setSyllabus(data.syllabus);
-      setSyllabusText(data.text);
-      if (!settings.topic && data.syllabus?.subject) {
-        setSettings((s) => ({ ...s, topic: data.syllabus.subject }));
-      }
-    } catch (e: any) {
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
+  const router = useRouter(); const params = useSearchParams(); const key = useRef(nanoid(16));
+  const [settings, setSettings] = useState<EbookSettings>(() => initialSettings(params.get("topic") || ""));
+  const [source, setSource] = useState(""); const [syllabus, setSyllabus] = useState<SyllabusInfo | null>(null);
+  const [advanced, setAdvanced] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
+  useEffect(() => { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(settings)); } catch {} }, [settings]);
+  useEffect(() => { ensureSession().catch(() => {}); }, []);
+  const set = <K extends keyof EbookSettings>(name: K, value: EbookSettings[K]) => setSettings(s => ({ ...s, [name]: value }));
+  async function upload(file: File) {
+    setBusy(true); setError("");
+    try { await ensureSession(); const fd = new FormData(); fd.append("file", file); const r = await fetch("/api/upload", { method: "POST", body: fd }); const d = await r.json(); if (!r.ok) throw new Error(d.error || "Upload failed"); setSource(d.text || ""); setSyllabus(d.syllabus); if (!settings.topic && d.syllabus?.subject) set("topic", d.syllabus.subject); }
+    catch (e: any) { setError(e.message); } finally { setBusy(false); }
   }
-
-  async function createNew() {
-    if (creating.current) return;
-    setError("");
-    if (settings.topic.trim().length < 3) {
-      setError("Please provide a more specific topic.");
-      return;
-    }
-    creating.current = true;
-    setBusy(true);
+  async function create() {
+    if (busy) return; if (settings.topic.trim().length < 3) { setError("Please enter a book topic or title."); return; }
+    setBusy(true); setError("");
     try {
-      await ensureSession();
-      let syl = syllabus;
-      if (!syl && syllabusText.trim().length > 40) {
-        const parsed = await api("/api/analyze", {
-          method: "POST",
-          body: JSON.stringify({ topic: settings.topic, syllabusText }),
-        });
-        syl = parsed.syllabus;
-        setSyllabus(parsed.syllabus);
-      }
-      const created = await api("/api/ebooks", {
-        method: "POST",
-        headers: { "Idempotency-Key": createKey.current, "Content-Type": "application/json" },
-        body: JSON.stringify(settings),
-      });
-      const id = (created.ebook.ebookId || created.ebook.id) as string;
-      if (syl) {
-        await api(`/api/ebooks/${id}`, { method: "PATCH", body: JSON.stringify({ syllabus: syl }) });
-      }
-      // The record now lives under its permanent ebookId. Clear the local
-      // draft so the next intentional "Create New Ebook" starts fresh and does
-      // not silently reuse stale values.
-      try {
-        window.localStorage.removeItem(DRAFT_KEY);
-      } catch {
-        /* ignore */
-      }
-      router.replace(`/ebooks/${id}/edit?tab=settings`);
-    } catch (e: any) {
-      creating.current = false;
-      setError(e.message);
-    } finally {
-      setBusy(false);
-    }
+      await ensureSession(); let detected = syllabus;
+      if (!detected && source.trim().length > 40) detected = (await api("/api/analyze", { method: "POST", body: JSON.stringify({ topic: settings.topic, syllabusText: source }) })).syllabus;
+      const created = await api("/api/ebooks", { method: "POST", headers: { "Idempotency-Key": key.current, "Content-Type": "application/json" }, body: JSON.stringify(settings) });
+      const id = created.ebook.ebookId || created.ebook.id;
+      if (detected) await api(`/api/ebooks/${id}`, { method: "PATCH", body: JSON.stringify({ syllabus: detected }) });
+      // Simple Mode always owns the complex research and writing pipeline.
+      await api(`/api/ebooks/${id}/generate`, { method: "POST", body: JSON.stringify({}) });
+      localStorage.removeItem(DRAFT_KEY); router.replace(`/ebooks/${id}/3d`);
+    } catch (e: any) { setError(e.message || "Could not start your ebook."); setBusy(false); }
   }
-
-  return (
-    <>
-      <Header />
-      <main className="mx-auto max-w-4xl px-4 py-10">
-        <p className="stamp text-gold-500">Create once</p>
-        <h1 className="font-display mt-4 text-3xl md:text-4xl">Create New Ebook</h1>
-        <p className="mt-2 text-ink-400">
-          A record is created only when you click this button. Edit, research, refresh, and back never duplicate it.
-        </p>
-        <ErrorBanner message={error} onDismiss={() => setError("")} />
-
-        <div className="mt-8 space-y-8">
-          <section className="paper-card rounded-2xl p-5 md:p-7">
-            <h2 className="font-display text-xl">Ebook settings</h2>
-            <div className="mt-5">
-              <SettingsForm value={settings} onChange={setSettings} />
-            </div>
-          </section>
-
-          <section className="paper-card rounded-2xl p-5 md:p-7">
-            <h2 className="font-display text-xl">Syllabus mode</h2>
-            <p className="mt-1 text-sm text-ink-400">Upload a curriculum PDF/DOCX or paste units. Folio will not invent a syllabus.</p>
-            <label className="mt-4 flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-paper-400 bg-paper-50 px-4 py-8 text-sm">
-              <Upload className="mb-2 h-5 w-5 text-gold-500" />
-              Upload syllabus or source document
-              <input type="file" accept=".pdf,.docx,.doc,.txt,.md" className="hidden" onChange={(e) => e.target.files?.[0] && onUpload(e.target.files[0])} />
-            </label>
-            <textarea
-              className="field mt-4 min-h-[120px]"
-              placeholder="Or paste a syllabus / unit list…"
-              value={syllabusText}
-              onChange={(e) => setSyllabusText(e.target.value)}
-            />
-            {syllabus?.detected && (
-              <div className="mt-4 rounded-xl bg-forest-500/10 p-4 text-sm">
-                <p className="font-semibold">Syllabus detected</p>
-                <p>Subject: {syllabus.subject || "—"}</p>
-                <p>
-                  {syllabus.units.length} unit(s), {syllabus.units.reduce((n, u) => n + u.topics.length, 0)} topic(s)
-                </p>
-              </div>
-            )}
-          </section>
-
-          <button disabled={busy} onClick={createNew} className="btn-gold w-full min-h-[52px] text-base md:w-auto">
-            {busy ? "Creating…" : "Create New Ebook"}
-          </button>
-        </div>
-      </main>
-      <Footer />
-    </>
-  );
+  return <><Header /><main className="mx-auto max-w-4xl px-4 py-8 md:py-12">
+    <div className="mx-auto max-w-2xl text-center"><span className="inline-flex items-center gap-2 rounded-full bg-gold-500/15 px-4 py-2 text-sm font-semibold text-gold-500"><Sparkles className="h-4 w-4" /> ⚡ Simple Mode</span><h1 className="font-display mt-5 text-4xl md:text-5xl">Create a beautiful 3D ebook</h1><p className="mt-3 text-ink-400">Enter the essentials. Folio researches, writes, fact-checks, designs, and builds your interactive flipbook automatically.</p></div>
+    <ErrorBanner message={error} onDismiss={() => setError("")} />
+    <section className="paper-card mt-8 rounded-3xl p-5 md:p-8"><div className="flex items-center gap-3"><span className="grid h-8 w-8 place-items-center rounded-full bg-ink-700 text-sm text-paper-100">1</span><div><h2 className="font-display text-2xl">Book information</h2><p className="text-sm text-ink-400">Smart defaults are already selected.</p></div></div>
+      <div className="mt-6 grid gap-4 md:grid-cols-2"><Field label="Book topic / title"><input className="field" autoFocus value={settings.topic} onChange={e => set("topic", e.target.value)} placeholder="e.g. अछूत कौन थे और अछूत कैसे बने?" /></Field><Field label="Language"><select className="field" value={settings.language} onChange={e => { const language = e.target.value; setSettings(s => ({ ...s, language, outputLanguage: language })); }}>{LANGUAGES.filter(l => ["auto","en","hi"].includes(l.code)).map(l => <option key={l.code} value={l.code}>{l.name} — {l.native}</option>)}</select></Field><Field label="Author name"><input className="field" value={settings.authorName} onChange={e => set("authorName", e.target.value)} placeholder="Your name" /></Field><Field label="Number of chapters"><input className="field" type="number" min="4" max="20" value={settings.chapterCount} onChange={e => set("chapterCount", Number(e.target.value))} /></Field><Field label="Book length"><select className="field" value={settings.length} onChange={e => { const length = e.target.value as EbookSettings["length"]; const suggested = LENGTHS.find(x => x.id === length)?.chapters || settings.chapterCount; setSettings(s => ({ ...s, length, chapterCount: suggested })); }}>{LENGTHS.map(l => <option key={l.id} value={l.id}>{l.label} — {l.hint}</option>)}</select></Field><Field label="Subtitle (optional)"><input className="field" value={settings.subtitle || ""} onChange={e => set("subtitle", e.target.value)} placeholder="A concise subtitle" /></Field></div>
+      <div className="mt-5 grid gap-4 md:grid-cols-2"><label className="flex min-h-[116px] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-paper-400 bg-paper-50 p-4 text-center text-sm"><FileUp className="mb-2 h-5 w-5 text-gold-500" /><b>Optional: upload source PDF/DOCX</b><span className="mt-1 text-ink-400">We will use it as supporting material.</span><input className="hidden" type="file" accept=".pdf,.docx,.doc,.txt,.md" onChange={e => e.target.files?.[0] && upload(e.target.files[0])} /></label><Field label="Optional: paste source material"><textarea className="field min-h-[116px]" value={source} onChange={e => setSource(e.target.value)} placeholder="Paste notes, a source excerpt, or a syllabus…" /></Field></div>
+      {syllabus?.detected && <p className="mt-3 rounded-xl bg-forest-500/10 p-3 text-sm text-verified">Source material understood: {syllabus.subject || "ready to use"}.</p>}
+      <button className="btn-gold mt-7 w-full min-h-[56px] text-base" disabled={busy} onClick={create}>{busy ? "Preparing your book…" : <><Sparkles className="h-5 w-5" /> ✨ Create Complete Ebook</>}</button></section>
+    <section className="mt-6 rounded-3xl border border-paper-300 bg-paper-50 p-5 md:p-7"><div className="flex items-center gap-3"><span className="grid h-8 w-8 place-items-center rounded-full bg-ink-700 text-sm text-paper-100">2</span><div><h2 className="font-display text-xl">AI creates the complete book</h2><p className="text-sm text-ink-400">No research questions or manual outlines required.</p></div></div><div className="mt-5 grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">{steps.map((step, i) => <div key={step} className="rounded-xl bg-paper-100 p-3"><span className="text-gold-500">0{i + 1}</span><br />{step}</div>)}</div></section>
+    <details className="paper-card mt-6 rounded-2xl p-5" open={advanced} onToggle={e => setAdvanced((e.target as HTMLDetailsElement).open)}><summary className="flex cursor-pointer list-none items-center justify-between font-semibold">Advanced Settings <ChevronDown className={`h-4 w-4 transition ${advanced ? "rotate-180" : ""}`} /></summary><p className="mt-2 text-sm text-ink-400">Optional controls for experienced authors. Simple Mode keeps these out of your way.</p><div className="mt-5 grid gap-4 md:grid-cols-2"><Field label="Research depth"><select className="field" value={settings.length} onChange={e => set("length", e.target.value as any)}><option value="short">Focused</option><option value="medium">Balanced</option><option value="long">Deep</option><option value="comprehensive">Exhaustive</option></select></Field><Field label="Writing style"><select className="field" value={settings.style} onChange={e => set("style", e.target.value)}><option>Clear academic</option><option>Conversational teacher</option><option>Story-driven narrative</option><option>Technical reference</option></select></Field><Field label="Academic difficulty"><select className="field" value={settings.difficulty} onChange={e => set("difficulty", e.target.value as any)}><option>Beginner</option><option>Intermediate</option><option>Advanced</option></select></Field><Field label="Source types"><select className="field"><option>Reliable sources (recommended)</option><option>Primary sources first</option><option>Academic and official sources</option></select></Field></div><div className="mt-4 flex flex-wrap gap-4 text-sm"><Toggle label="Image suggestions" checked={settings.includeImages} onChange={v => set("includeImages", v)} /><Toggle label="Glossary" checked={settings.includeGlossary} onChange={v => set("includeGlossary", v)} /><Toggle label="Strict fact-checking" checked={settings.includeReferences} onChange={v => set("includeReferences", v)} /></div></details>
+    <section className="mt-6 rounded-2xl bg-ink-700 p-5 text-paper-100"><div className="flex gap-3"><BookOpen className="h-5 w-5 shrink-0 text-gold-500" /><p className="text-sm">Every book is built with citations and references, clear evidence versus interpretation, and careful handling of uncertainty. Folio does not invent sources or quotations.</p></div></section>
+  </main><Footer /></>;
 }
-
-export default function NewEbookPage() {
-  return (
-    <Suspense fallback={<div className="p-10">Loading…</div>}>
-      <NewInner />
-    </Suspense>
-  );
-}
+function Field({ label, children }: { label: string; children: ReactNode }) { return <label className="block text-sm"><span className="mb-1.5 block text-ink-400">{label}</span>{children}</label>; }
+function Toggle({ label, checked, onChange }: { label: string; checked: boolean; onChange: (v: boolean) => void }) { return <label className="flex items-center gap-2"><input type="checkbox" checked={checked} onChange={e => onChange(e.target.checked)} /> {label}</label>; }
+export default function NewEbookPage() { return <Suspense fallback={<div className="p-10">Loading…</div>}><NewInner /></Suspense>; }
