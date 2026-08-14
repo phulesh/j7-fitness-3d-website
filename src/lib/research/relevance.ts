@@ -1,5 +1,6 @@
 import { sourceTier } from "./rank";
 import { domainOf } from "../http";
+import { countTermOccurrences, termsInText, textHasTerm } from "./translit";
 import type { ClaimKind, RejectedSource, ResearchQualityReport, SourceRecord } from "../types";
 
 export const MIN_RELEVANCE = 70;
@@ -106,6 +107,25 @@ const QUERY_STOP = new Set([
   "course",
   "doctor",
   "dr",
+  // Hindi function words that carry no topical signal
+  "और",
+  "तथा",
+  "एवं",
+  "क्या",
+  "कौन",
+  "कैसे",
+  "क्यों",
+  "में",
+  "से",
+  "का",
+  "की",
+  "के",
+  "है",
+  "हैं",
+  "पर",
+  "यह",
+  "वह",
+  "एक",
 ]);
 
 const PHYSICS_MARKERS =
@@ -127,11 +147,15 @@ const BLOCKED_WORK_INQUIRY_CHAPTERS =
   /^(religion|communism|indo-?aryan migrations?|in popular culture|works|terminology|official term|early life|personal life|death|family|electoral history|awards|filmography|discography|complete works)$/i;
 
 export function normalizeText(s: string): string {
+  // \p{M} keeps combining marks — Devanagari matras and virama are marks, not
+  // letters. Without it "वेदांत" was shredded into "व द त", every Hindi core
+  // term vanished, all sources scored 0 relevance, and research reported
+  // "0 accepted sources" for perfectly good material.
   return (s || "")
     .toLowerCase()
     .replace(/[“”]/g, '"')
     .replace(/[—–]/g, "-")
-    .replace(/[^ \p{L}\p{N}'-]+/gu, " ")
+    .replace(/[^ \p{L}\p{M}\p{N}'-]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -397,13 +421,22 @@ function ambedkarUntouchablesProfile(topic: string): TopicProfile {
 
 function genericProfile(topic: string, category: TopicKind, type: string): TopicProfile {
   const parsed = parseNamedWork(topic);
+  // "Named work" means a specific book/essay plus its author or an actual
+  // question ("who were they?"). A subject with a descriptive subtitle
+  // ("वेदांत दर्शन: इतिहास, प्रमुख विचार और प्रमुख आचार्य") is NOT a named work —
+  // treating it as one used to block the normal outline/relevance paths.
+  const questionLike = Boolean(
+    parsed.question && (/[?？]/.test(parsed.question) || /\b(who|why|how|what|when)\b/i.test(parsed.question) || /कौन|क्यों|कैसे|क्या/.test(parsed.question))
+  );
   const namedWork = Boolean(
     parsed.workTitle &&
-      (parsed.author || parsed.question) &&
+      (parsed.author || questionLike) &&
       !["biography", "scientific", "programming", "technical", "medical"].includes(category)
   );
   const kind: TopicKind = namedWork ? "named-work-inquiry" : category;
-  const core = distinctiveTerms(`${parsed.workTitle || topic} ${parsed.author || ""}`);
+  // Include the descriptive part after a colon ("वेदांत दर्शन: इतिहास, प्रमुख
+  // विचार और प्रमुख आचार्य") so on-topic sources about those aspects also match.
+  const core = distinctiveTerms(`${parsed.workTitle || topic} ${parsed.author || ""} ${parsed.question || ""}`);
   const allowStem = ["scientific", "technical", "programming", "medical"].includes(kind);
   const queries = [
     parsed.workTitle && parsed.author ? `"${parsed.workTitle}" ${parsed.author}` : topic,
@@ -445,6 +478,39 @@ export function buildTopicProfile(
   return genericProfile(topic, category, opts.type || "");
 }
 
+/**
+ * Enrich a topic profile with related entities discovered in already-accepted,
+ * highly relevant seed sources. A source about "वेदांत दर्शन" mentions
+ * शंकराचार्य, रामानुज, उपनिषद, अद्वैत … — sources focused on those entities are
+ * genuinely relevant even though they never repeat the topic string itself.
+ * This is the antidote to the over-filtering bug without admitting junk:
+ * context terms only ever add relevance when core topical content also matches.
+ */
+export function expandProfileFromSeeds(profile: TopicProfile, seedTexts: string[]): void {
+  if (!seedTexts.length) return;
+  const freq = new Map<string, number>();
+  for (const text of seedTexts) {
+    // Frequent long words (any script)
+    for (const w of normalizeText(text).split(" ")) {
+      if (w.length < 4 || QUERY_STOP.has(w)) continue;
+      freq.set(w, (freq.get(w) || 0) + 1);
+    }
+    // Latin-script proper nouns (Shankara, Ramanuja, Upanishads, …)
+    for (const m of text.match(/\b[A-ZĀĪŪŚṢṆṬḌṄÑ][a-zāīūṛśṣṇṭḍṅñ]{3,}\b/g) || []) {
+      const w = m.toLowerCase();
+      if (QUERY_STOP.has(w)) continue;
+      freq.set(w, (freq.get(w) || 0) + 2);
+    }
+  }
+  const existing = new Set([...profile.coreTerms, ...profile.contextTerms].map((t) => normalizeText(t)));
+  const top = [...freq.entries()]
+    .filter(([w, n]) => n >= 2 && !existing.has(w))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 24)
+    .map(([w]) => w);
+  profile.contextTerms = [...new Set([...profile.contextTerms, ...top])].slice(0, 40);
+}
+
 function haystack(c: SourceCandidate): string {
   return `${c.title || ""}\n${c.snippet || ""}\n${c.extractedText || ""}`;
 }
@@ -479,18 +545,13 @@ export function looksLikeEntertainmentHomonym(candidate: SourceCandidate, profil
 }
 
 function mentionsCore(text: string, profile: TopicProfile, min: number): boolean {
-  const n = normalizeText(text);
-  let hits = 0;
-  for (const term of profile.coreTerms) {
-    if (n.includes(normalizeText(term))) hits++;
-    if (hits >= min) return true;
-  }
-  return false;
+  // Cross-script matching: Hindi, Devanagari spelling variants (वेदांत/वेदान्त),
+  // transliteration (Vedanta/Vedānta), and diacritic variants all count.
+  return termsInText(text, profile.coreTerms).length >= min;
 }
 
 function termHits(text: string, terms: string[]): string[] {
-  const n = normalizeText(text);
-  return terms.filter((t) => n.includes(normalizeText(t)));
+  return termsInText(text, terms);
 }
 
 export function isPreferredDomain(url: string, profile: TopicProfile): boolean {
@@ -587,21 +648,59 @@ export function evaluateCandidate(
   // Title alone is never enough.
   const titleHits = termHits(title, profile.coreTerms);
   const contentHits = inspected.length >= 40 ? termHits(inspected, profile.coreTerms) : [];
+  const contextHits = inspected.length >= 40 && profile.contextTerms.length ? termHits(inspected, profile.contextTerms) : [];
   const fullHits = termHits(full, profile.coreTerms);
   const questionBlob = normalizeText(questions.join(" "));
   const outlineBlob = normalizeText(outline.join(" "));
   const inspectedN = normalizeText(inspected);
-  const questionHits = inspected.length >= 40 ? distinctiveTerms(questionBlob).filter((t) => inspectedN.includes(t) && t.length > 4).length : 0;
-  const outlineHits = inspected.length >= 40 ? distinctiveTerms(outlineBlob).filter((t) => inspectedN.includes(t) && t.length > 4).length : 0;
+  // Cross-script question/outline matching (Hindi topic ↔ English source and
+  // vice versa): a term counts when it appears in any script or spelling.
+  const questionTerms = distinctiveTerms(questionBlob).filter((t) => t.length > 3);
+  const outlineTerms = distinctiveTerms(outlineBlob).filter((t) => t.length > 3);
+  const questionHits =
+    inspected.length >= 40
+      ? questionTerms.filter((t) => inspectedN.includes(t)).length + termsInText(inspected, questionTerms.filter((t) => !inspectedN.includes(t))).length
+      : 0;
+  const outlineHits =
+    inspected.length >= 40
+      ? outlineTerms.filter((t) => inspectedN.includes(t)).length + termsInText(inspected, outlineTerms.filter((t) => !inspectedN.includes(t))).length
+      : 0;
 
   let relevance = 0;
-  if (profile.workTitle && normalizeText(full).includes(normalizeText(profile.workTitle))) relevance += inspected.length >= 40 ? 22 : 8;
+  if (profile.workTitle && textHasTerm(full, profile.workTitle)) relevance += inspected.length >= 40 ? 22 : 8;
   if (profile.author) {
     const authorLast = normalizeText(profile.author).split(" ").pop() || "";
-    if (authorLast && normalizeText(full).includes(authorLast)) relevance += inspected.length >= 40 ? 16 : 6;
+    if (authorLast && (normalizeText(full).includes(authorLast) || textHasTerm(full, authorLast))) {
+      relevance += inspected.length >= 40 ? 16 : 6;
+    }
   }
-  relevance += Math.min(36, contentHits.length * 7);
+  // Short-topic profiles (few distinctive terms) give each confirmed content
+  // hit more weight, otherwise on-topic sources could never reach the
+  // inclusion threshold — the "over-filtering" failure mode.
+  const shortProfile = profile.coreTerms.length <= 8;
+  relevance += Math.min(shortProfile ? 45 : 36, contentHits.length * (shortProfile ? 9 : 7));
   relevance += Math.min(12, titleHits.length * 3);
+  // Coverage bonus: content confirms a majority of the topic's core terms.
+  if (contentHits.length >= Math.min(3, Math.max(2, Math.ceil(profile.coreTerms.length / 2)))) relevance += 14;
+  // Head-term frequency: the topic's subject word appears repeatedly in the
+  // inspected content (any script/spelling) — strong topical signal.
+  const headTerm = profile.coreTerms[0];
+  if (headTerm && inspected.length >= 40) {
+    const occurrences = countTermOccurrences(inspected, headTerm);
+    if (occurrences >= 3) relevance += 16;
+  }
+  // Related-entity evidence discovered from accepted seed sources
+  // (e.g. शंकराचार्य/उपनिषद for a वेदांत topic). Requires at least one core
+  // topical hit so unrelated pages can't ride in on shared vocabulary alone.
+  if (contextHits.length >= 2 && (contentHits.length >= 1 || titleHits.length >= 1 || fullHits.length >= 1)) {
+    relevance += Math.min(30, contextHits.length * 6);
+  }
+  // The candidate's own title names a related entity learned from the seed
+  // sources (e.g. a "Ramanuja" article for a Vedanta topic whose seed text
+  // repeatedly mentions रामानुजाचार्य) and its content confirms the topic.
+  if (profile.contextTerms.length && contentHits.length >= 1 && termsInText(title, profile.contextTerms).length >= 1) {
+    relevance += 18;
+  }
   // A title that matches the requested topic (exactly, or as a full phrase) is
   // strong evidence of relevance when the inspected content also confirms the
   // core terms. Without this, short topics whose profile has only one or two
@@ -609,11 +708,15 @@ export function evaluateCandidate(
   // inclusion threshold even for a perfect on-topic source.
   const topicNorm = normalizeText(profile.topic);
   const titleNorm = normalizeText(title);
+  const topicWords = topicNorm.split(" ").filter((w) => w.length > 2 && !QUERY_STOP.has(w));
   const titleIsTopic =
     titleNorm.length >= 4 &&
     (titleNorm === topicNorm ||
       (titleNorm.split(" ").length >= 2 && topicNorm.includes(titleNorm)) ||
-      (topicNorm.split(" ").length >= 2 && titleNorm.includes(topicNorm)));
+      (topicNorm.split(" ").length >= 2 && titleNorm.includes(topicNorm)) ||
+      // Cross-script: an article titled "Vedanta" matches the Hindi topic
+      // "वेदांत दर्शन…" (and vice versa) even though the scripts differ.
+      (topicWords.length > 0 && topicWords.filter((w) => textHasTerm(title, w)).length >= Math.min(2, topicWords.length)));
   if (titleIsTopic && contentHits.length >= 1) relevance += 30;
   relevance += Math.min(12, Math.floor(questionHits / 2) * 3);
   relevance += Math.min(8, Math.floor(outlineHits / 2) * 2);

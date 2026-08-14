@@ -479,6 +479,26 @@ export interface QualityReport {
   items: QualityCheckItem[];
 }
 
+/** Result of the final content gate (validateBookForPublishing). */
+export interface PublishGateReport {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+  stats: {
+    chapters: number;
+    words: number;
+    questions: number;
+    answeredQuestions: number;
+    mcqs: number;
+    validMcqs: number;
+    references: number;
+    sources: number;
+    glossaryTerms: number;
+    emptyChapters: number;
+  };
+  checkedAt?: string;
+}
+
 export interface EbookExports {
   pdf?: string;
   epub?: string;
@@ -552,6 +572,7 @@ export interface EbookDocument {
     detail?: string;
   };
   qualityReport?: QualityReport;
+  publishGate?: PublishGateReport;
   exports?: EbookExports;
   progress: {
     step: string;

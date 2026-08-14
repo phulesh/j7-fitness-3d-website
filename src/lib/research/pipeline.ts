@@ -28,6 +28,7 @@ import {
   buildTopicProfile,
   classifyClaim,
   evaluateCandidate,
+  expandProfileFromSeeds,
   filterQueries,
   isBlockedOutlineTitle,
   MIN_RELEVANCE,
@@ -108,7 +109,8 @@ export async function runResearch(
 
   onProgress?.("Searching encyclopedias and knowledge bases");
 
-  const corpusHits = searchCorpus(focusedCorpusQuery(profile, topic), 10).filter((h) => considerHit(h));
+  const allCorpusHits = searchCorpus(focusedCorpusQuery(profile, topic), 12);
+  const corpusHits = allCorpusHits.filter((h) => considerHit(h));
   for (const h of corpusHits) {
     hits.push({ title: h.title, url: h.url, snippet: h.snippet, provider: "corpus" });
   }
@@ -468,6 +470,67 @@ export async function runResearch(
       score: h.score,
       used: false,
     });
+  }
+
+  // ---- Second pass: related-entity expansion (anti-over-filtering) ----
+  // Learn related entities from the strongest accepted sources, then give the
+  // rejected pile one more evaluation with the enriched profile. A page about
+  // Shankaracharya IS relevant to a Vedanta book even if it never repeats the
+  // full topic string. Cross-script matching applies throughout.
+  for (let round = 0; round < 2; round++) {
+    const seedTexts = sources
+      .filter((s) => (s.relevanceScore ?? 0) >= 80 && (s.extractedText || "").length > 300)
+      .slice(0, 6)
+      .map((s) => `${s.title}\n${s.extractedText.slice(0, 8000)}`);
+    if (!seedTexts.length) break;
+    expandProfileFromSeeds(profile, seedTexts);
+    const stillRejected: RejectedSource[] = [];
+    let acceptedThisRound = 0;
+    for (const r of rejected) {
+      // Only reconsider candidates with inspectable content and no hard block.
+      if (!r.url || /arxiv\.org/.test(r.url) || /Entertainment homonym|Unrelated scientific paper|GitHub repository/.test(r.rejectionReason || "")) {
+        stillRejected.push(r);
+        continue;
+      }
+      if (sources.some((s) => s.url === r.url)) continue;
+      const corpusMatch = allCorpusHits.find((h) => h.url === r.url);
+      const candidate = {
+        title: r.title,
+        url: r.url,
+        snippet: r.snippet,
+        extractedText: corpusMatch?.extract || r.snippet,
+      };
+      const ev = evaluateCandidate(candidate, profile, {
+        researchQuestions: profile.researchQuestions,
+        outlineTitles: profile.chapterPlan?.map((c) => c.title),
+      });
+      if (ev.accepted) {
+        acceptedThisRound++;
+        sources.push(
+          annotateSource(
+            {
+              id: sid++,
+              title: r.title,
+              organization: corpusMatch?.organization || organizationFromDomain(r.url),
+              url: r.url,
+              domain: organizationFromDomain(r.url),
+              snippet: r.snippet || "",
+              extractedText: corpusMatch?.extract || "",
+              retrievedAt: nowIso(),
+              tier: sourceTier(r.url),
+              score: ev.relevanceScore,
+              used: Boolean(corpusMatch?.extract),
+            },
+            ev
+          )
+        );
+      } else {
+        stillRejected.push(r);
+      }
+    }
+    rejected.length = 0;
+    rejected.push(...stillRejected);
+    if (!acceptedThisRound) break;
   }
 
   // Drop any source that somehow slipped below the threshold after content inspection.

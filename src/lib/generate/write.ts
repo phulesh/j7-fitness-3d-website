@@ -18,6 +18,7 @@ import type {
 } from "../types";
 import type { ResearchBundle } from "../research/pipeline";
 import { buildTopicProfile, claimKindLabel, classifyClaim } from "../research/relevance";
+import { termsInText } from "../research/translit";
 import { isHindiOutput } from "../language";
 import { chapterPlain, countWords, escapeHtml, labelsFor } from "./text";
 import {
@@ -34,6 +35,8 @@ import {
   composeCompleteAchhootChapter,
   composeCompleteAchhootFrontMatter,
 } from "./achhoot";
+import { ensureChapterQA } from "./qa";
+import { deepenChapterFromSources } from "./depth";
 
 export { chapterPlain, countWords, escapeHtml, labelsFor } from "./text";
 
@@ -81,7 +84,9 @@ function notesForChapter(
   for (const s of bundle.sources) {
     if (!s.extractedText || s.extractedText.length < 120) continue;
     const hay = `${s.title} ${s.extractedText.slice(0, 1500)}`.toLowerCase();
-    if (titleWords.filter((w) => hay.includes(w)).length >= Math.min(2, titleWords.length)) {
+    const direct = titleWords.filter((w) => hay.includes(w)).length;
+    const cross = direct ? 0 : termsInText(hay, titleWords).length;
+    if (direct + cross >= Math.min(2, titleWords.length)) {
       sourceIds.add(s.id);
       paras.push(`SOURCE [${s.id}] ${s.title}:\n${s.extractedText.slice(0, 1600)}`);
     }
@@ -137,6 +142,8 @@ export async function writeChapter(opts: {
     });
   }
 
+  let chapter: Chapter | null = null;
+
   if (aiConfigured()) {
     const ai = await writeChapterWithAi({ index, item, settings, analysis, notes, sourceIds, total, images });
     if (ai) {
@@ -148,14 +155,15 @@ export async function writeChapter(opts: {
           sources: bundle.sources,
           facts: bundle.facts || [],
         });
-        return ensured.chapter;
+        chapter = ensured.chapter;
+      } else {
+        chapter = ai;
       }
-      return ai;
     }
   }
 
-  if (hindi) {
-    return composeHindiChapter({
+  if (!chapter && hindi) {
+    chapter = composeHindiChapter({
       index,
       item,
       settings,
@@ -165,7 +173,25 @@ export async function writeChapter(opts: {
       images,
     });
   }
-  return writeChapterFromSources({ index, item, settings, analysis, bundle, notes, sourceIds, images });
+  if (!chapter) {
+    chapter = writeChapterFromSources({ index, item, settings, analysis, bundle, notes, sourceIds, images });
+  }
+
+  // Post-generation hardening applied to EVERY chapter regardless of which
+  // writer produced it:
+  //  1. Deepen thin chapters deterministically from approved source evidence.
+  //  2. Validate every question/answer and MCQ; regenerate ONLY the failing
+  //     pieces from chapter evidence (never the whole book).
+  const lang = analysis.outputLanguage || settings.outputLanguage || settings.language || "en";
+  deepenChapterFromSources(chapter, bundle.sources, settings, lang);
+  ensureChapterQA(chapter, {
+    lang,
+    sources: bundle.sources,
+    includeExercises: Boolean(settings.includeExercises),
+    includeMcqs: Boolean(settings.includeMcqs),
+  });
+  chapter.wordCount = countWords(chapterPlain(chapter));
+  return chapter;
 }
 
 async function writeChapterWithAi(opts: {
@@ -457,7 +483,9 @@ function collectRelevantPassages(item: OutlineItem, bundle: ResearchBundle, pref
     const chunks = sections.length ? sections : [{ title: s.title, extract: s.extractedText }];
     for (const sec of chunks) {
       const hay = `${sec.title} ${sec.extract}`.toLowerCase();
-      const score = words.filter((w) => hay.includes(w)).length + (prefer.includes(s.id) ? 1 : 0);
+      const direct = words.filter((w) => hay.includes(w)).length;
+      const cross = direct ? 0 : termsInText(hay.slice(0, 3000), words).length;
+      const score = direct + cross + (prefer.includes(s.id) ? 1 : 0);
       if (score > 0) {
         scored.push({
           heading: sec.title === "Introduction" ? s.title : sec.title,

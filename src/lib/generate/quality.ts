@@ -12,8 +12,21 @@ import { exportEpub } from "../export/epub";
 import { exportFlipbook, exportStandaloneFlipbookHtml } from "../export/flipbook";
 import { isAchhootResearchTopic, ACHHOOT_HINDI_TITLES } from "./outline";
 import { validateCompleteAchhootContent } from "./achhoot";
+import { validateBookForPublishing } from "./publish-gate";
+import { ensureChapterQA } from "./qa";
 
 export type QualityStage = "generating_figures" | "designing_pages" | "creating_3d" | "building_pdf" | "building_epub" | "building_html" | "quality_check";
+
+function textOfChapter(ch: Chapter) {
+  return [
+    ch.title,
+    ch.summary,
+    ...ch.sections.flatMap((section) => [section.heading, section.html.replace(/<[^>]+>/g, " ")]),
+    ...ch.keyPoints,
+    ...ch.questions.map((q) => `${q.question} ${q.answer}`),
+    ...ch.mcqs.map((q) => `${q.question} ${(q.options || []).join(" ")} ${q.explanation || ""}`),
+  ].join("\n");
+}
 
 function textOf(doc: EbookDocument) {
   return [
@@ -198,6 +211,9 @@ export async function runFinalQualityCheck(
     const conclusions = doc.chapters.every((chapter) =>
       chapter.sections.some((section) => /अध्याय का निष्कर्ष/.test(section.heading) && section.html.replace(/<[^>]+>/g, " ").trim().length > 180)
     );
+    // NOTE: this commissioned-length check intentionally keeps the legacy
+    // token pattern (letters only, no combining marks) because the canonical
+    // Achhoot edition's 1,500–2,500 target was calibrated against it.
     const analyticalLengths = doc.chapters.map((chapter) =>
       (chapter.sections.map((section) => section.html.replace(/<[^>]+>/g, " ")).join(" ").match(/[\p{L}\p{N}]+/gu) || []).length
     );
@@ -206,7 +222,8 @@ export async function runFinalQualityCheck(
     // amount. Review answers are deliberately excluded so they cannot pad it.
     const substantiveLengths = analyticalLengths.every((length) => length >= 1_500 && length <= 3_100);
     const citedChapters = doc.chapters.every((chapter) => chapter.sourceIds.length > 0 && chapter.sourceIds.every((id) => sourceIds.has(id)));
-    const citedSourceRecords = [...new Set(citedIds)].map((id) => doc.sources.find((source) => Number(source.id) === id));
+    const docSources = doc.sources;
+    const citedSourceRecords = [...new Set(citedIds)].map((id) => docSources.find((source) => Number(source.id) === id));
     const traceableCitations = citedSourceRecords.length > 0 && citedSourceRecords.every(
       (source) => Boolean(source && source.verificationStatus === "verified" && source.title && /^https?:\/\//.test(source.url))
     );
@@ -222,16 +239,73 @@ export async function runFinalQualityCheck(
     checks.push(item("achhoot-placeholders", "No placeholders, research notes, or deferred answers", !placeholders));
   }
 
+  // ---- Central content gate: validateBookForPublishing ----
+  // Repair Q&A/MCQs first (regenerating ONLY failing answers), then require
+  // the gate to pass before any export is produced. A book with 0 words,
+  // empty chapters, unanswered questions, or malformed MCQs can never reach
+  // READY.
+  // The canonical Achhoot edition ships fully authored three-paragraph answers;
+  // only its MCQs may be topped up. Every other book gets full Q&A repair.
+  const achhootCanonical = isAchhootResearchTopic(doc.analysis?.topic || doc.settings.topic);
+  {
+    const lang = doc.outputLanguage || doc.language;
+    let qaRepaired = false;
+    for (const chapter of doc.chapters) {
+      const res = ensureChapterQA(chapter, {
+        lang,
+        sources: doc.sources,
+        includeExercises: !achhootCanonical && Boolean(doc.settings.includeExercises),
+        includeMcqs: Boolean(doc.settings.includeMcqs),
+      });
+      if (res.repairedAnswers || res.repairedMcqs) {
+        qaRepaired = true;
+        chapter.wordCount = (textOfChapter(chapter).match(/[\p{L}\p{M}\p{N}]+/gu) || []).length;
+      }
+    }
+    if (qaRepaired) {
+      attempts++;
+      saveChapters(doc.id, doc.chapters);
+      updateEbook(doc.id, { chapters: doc.chapters });
+      doc = getEbook(ebookId)!;
+    }
+  }
+  const gate = validateBookForPublishing(doc);
+  updateEbook(doc.id, { publishGate: { ...gate, checkedAt: new Date().toISOString() } });
+  checks.push(
+    item(
+      "content-gate",
+      "Content completeness gate (words, chapters, answers, MCQs)",
+      gate.valid,
+      gate.valid
+        ? `${gate.stats.chapters} chapters · ${gate.stats.words} words · ${gate.stats.answeredQuestions}/${gate.stats.questions} answers · ${gate.stats.validMcqs}/${gate.stats.mcqs} MCQs`
+        : gate.errors.slice(0, 6).join("; ")
+    )
+  );
+
   onStage?.("designing_pages", 87, "Designing pages and checking navigation...");
   const pages = buildBookPages(doc);
   checks.push(item("pages", "Pages, page numbers, and contents", pages.length >= doc.chapters.length + 3 && pages.every((page, index) => page.index === index && Boolean(page.pageLabel))));
+  // The 3D book must contain the actual manuscript, not a shell of blank pages.
+  const pageText = pages.map((p) => p.html.replace(/<[^>]+>/g, " ")).join(" ");
+  const pageWords = (pageText.match(/[\p{L}\p{M}\p{N}]+/gu) || []).length;
+  checks.push(
+    item(
+      "3d-content",
+      "3D book pages contain the full manuscript",
+      pageWords >= Math.floor(gate.stats.words * 0.5) && pageWords > 0,
+      `${pageWords} words across ${pages.length} pages`
+    )
+  );
 
   // Do not package an outline-only, uncited, or incomplete manuscript. File
   // generation begins only after every content/citation/figure preflight check
   // has passed; export-specific checks run against the resulting files below.
   const preflightFailed = checks.filter((check) => !check.passed);
   if (preflightFailed.length) {
-    throw new Error(`Pre-export quality check failed: ${preflightFailed.map((check) => check.label).join(", ")}`);
+    const detail = preflightFailed
+      .map((check) => (check.detail ? `${check.label}: ${check.detail}` : check.label))
+      .join(" | ");
+    throw new Error(`Pre-export quality check failed — ${detail}`);
   }
 
   const paths = outputPaths(doc);
@@ -291,6 +365,9 @@ export async function runFinalQualityCheck(
     items: checks,
   };
   const exports: EbookExports = { ...paths, generatedAt: new Date().toISOString() };
-  if (failed.length) throw new Error(`Final quality check failed: ${failed.map((check) => check.label).join(", ")}`);
+  if (failed.length) {
+    const detail = failed.map((check) => (check.detail ? `${check.label}: ${check.detail}` : check.label)).join(" | ");
+    throw new Error(`Final quality check failed — ${detail}`);
+  }
   return { report, exports };
 }

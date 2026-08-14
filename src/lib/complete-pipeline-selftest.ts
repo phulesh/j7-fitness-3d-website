@@ -62,6 +62,8 @@ async function main() {
     ]),
   ].join("\n");
   const contentErrors = doc.chapters.flatMap((chapter) => validateCompleteAchhootContent(chapter));
+  // Legacy token pattern (no combining marks) — the commissioned 1,500–2,500
+  // word target for the canonical Achhoot edition was calibrated against it.
   const analyticalLengths = doc.chapters.map((chapter) =>
     (chapter.sections.map((section) => section.html.replace(/<[^>]+>/g, " ")).join(" ").match(/[\p{L}\p{N}]+/gu) || []).length
   );

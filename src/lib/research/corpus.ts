@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { tokenize } from "./rank";
+import { termsInText } from "./translit";
 import type { RawHit } from "./search";
 
 export interface CorpusDoc {
@@ -44,7 +45,12 @@ export function searchCorpus(query: string, limit = 8): (RawHit & { extract: str
     .map((d) => {
       const hay = `${d.title} ${d.tags?.join(" ") || ""} ${d.extract}`.toLowerCase();
       const titleHits = tokenize(d.title).filter((t) => q.includes(t)).length;
-      const bodyHits = q.filter((t) => hay.includes(t)).length;
+      const direct = q.filter((t) => hay.includes(t));
+      // Cross-script matching so Hindi queries can find English corpus docs
+      // (वेदांत ↔ Vedanta) and vice versa; only tokens not already matched
+      // literally are re-checked through transliteration.
+      const crossHits = termsInText(hay, q.filter((t) => !direct.includes(t))).length;
+      const bodyHits = direct.length + crossHits;
       const score = titleHits * 8 + bodyHits;
       return { d, score };
     })

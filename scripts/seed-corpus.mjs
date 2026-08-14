@@ -219,13 +219,140 @@ The book should be read as a reasoned thesis with stated assumptions. Later scho
 This provision is primary-source constitutional law. It belongs to Part III (Fundamental Rights). It is distinct from B. R. Ambedkar's 1948 historical book The Untouchables, which offered a hypothesis about origins. The constitutional text establishes the modern legal status of untouchability; it does not by itself prove or disprove the Broken Men theory or the beef-eating explanation.
 Parliament gave effect to Article 17 through statutes that punish the enforcement of disabilities arising from untouchability. Official copies of the Constitution are published by the Legislative Department of the Government of India.`,
   },
+  {
+    title: "Vedanta",
+    url: "https://en.wikipedia.org/wiki/Vedanta",
+    organization: "Wikipedia",
+    tags: ["vedanta", "vedānta", "वेदांत", "वेदान्त", "hindu philosophy", "darshana", "upanishads", "uttara mimamsa"],
+    extract: `Vedanta (Sanskrit: वेदान्त, Vedānta), also known as Uttara Mīmāṃsā, is one of the six orthodox (āstika) traditions of Hindu philosophy and textual exegesis. The word Vedanta means "end of the Vedas" and originally referred to the Upanishads, the concluding portions of the Vedic corpus; it later came to denote the schools of philosophy that interpret them. All Vedanta traditions ground their positions in the Prasthānatrayī, the "three sources": the Upanishads, the Brahma Sutras of Bādarāyaṇa, and the Bhagavad Gītā.
+Vedanta is concerned with the relationship among three principles: Brahman (the ultimate reality), Ātman or Jīva (the individual self), and Prakṛti or Jagat (the empirical world). The major sub-traditions differ chiefly on whether the self and Brahman are identical, qualified aspects of one reality, or eternally distinct. The best-known schools are Advaita (non-dualism) associated with Ādi Śaṅkara, Viśiṣṭādvaita (qualified non-dualism) associated with Rāmānuja, Dvaita (dualism) associated with Madhvācārya, along with Bhedābheda (difference and non-difference), Dvaitādvaita of Nimbārka, Śuddhādvaita of Vallabha, and Acintya-bhedābheda of Caitanya.
+All schools of Vedanta accept the authority of śruti (revealed scripture), the doctrine of karma and rebirth, and mokṣa (liberation) as the highest human aim, while disagreeing about the means to liberation — knowledge (jñāna), devotion (bhakti), or divine grace — and about the ontological status of the world.
+== History ==
+The Upanishads were composed over several centuries, with the oldest (Bṛhadāraṇyaka and Chāndogya) generally dated before the fifth century BCE. The Brahma Sutras, attributed to Bādarāyaṇa, systematised Upanishadic teaching, likely in the early centuries CE. Gauḍapāda's Māṇḍūkya Kārikā (c. sixth–seventh century CE) is an early non-dualist treatise that influenced Ādi Śaṅkara, traditionally dated to the eighth century CE. Later ācāryas — Rāmānuja (traditionally 1017–1137 CE), Madhva (1238–1317 CE), Nimbārka, Vallabha (1479–1531), and Caitanya (1486–1534) — founded schools that remain living traditions with monastic lineages and extensive commentarial literatures.
+== Influence ==
+Vedanta became the dominant framework of Hindu intellectual life in the medieval period and profoundly shaped devotional movements. In the nineteenth and twentieth centuries, thinkers such as Ram Mohan Roy, Swami Vivekananda, Sarvepalli Radhakrishnan, and Ramana Maharshi presented Vedantic ideas to modern audiences in India and the West; this modern reception is often called Neo-Vedanta.`,
+  },
+  {
+    title: "Advaita Vedanta",
+    url: "https://en.wikipedia.org/wiki/Advaita_Vedanta",
+    organization: "Wikipedia",
+    tags: ["advaita", "advaita vedanta", "अद्वैत", "अद्वैत वेदांत", "shankara", "śaṅkara", "nondualism", "maya", "brahman"],
+    extract: `Advaita Vedanta (Sanskrit: अद्वैत वेदान्त, "non-dual Vedanta") is the oldest extant sub-school of Vedanta. Its central thesis is that Brahman alone is ultimately real, that the innermost self (Ātman) is not different from Brahman, and that the appearance of a plural world of distinct selves and objects arises from avidyā (ignorance) often described through the concept of māyā.
+In Advaita, liberation (mokṣa) is attained by the direct knowledge (jñāna) of the identity of Ātman and Brahman, summarised in the Upanishadic "great sayings" (mahāvākyas) such as tat tvam asi ("that thou art", Chāndogya Upaniṣad 6.8.7) and ahaṁ brahmāsmi ("I am Brahman", Bṛhadāraṇyaka Upaniṣad 1.4.10). Since ignorance, not real bondage, is the problem, knowledge rather than ritual action removes it. Advaita distinguishes two standpoints: the conventional or empirical (vyāvahārika) reality in which the world, scripture, and practice function, and the absolute (pāramārthika) standpoint from which only non-dual Brahman is real.
+Gauḍapāda's Kārikā on the Māṇḍūkya Upaniṣad is the earliest surviving systematic Advaita text. Ādi Śaṅkara (traditionally 788–820 CE, though dates are debated) gave the school its classical form through commentaries (bhāṣyas) on the Brahma Sutras, the principal Upanishads, and the Bhagavad Gītā, and through independent works such as Upadeśasāhasrī. Later Advaitins, including Padmapāda, Sureśvara, Vācaspati Miśra, and Vidyāraṇya, developed sub-schools (Vivaraṇa and Bhāmatī) that debated the locus and nature of ignorance.
+Advaita describes Brahman as sat-cit-ānanda (being–consciousness–bliss), without attributes (nirguṇa) in its highest characterisation, while allowing worship of Brahman with attributes (saguṇa, Īśvara) at the empirical level as a purifying discipline. Critics from the theistic Vedanta schools, especially Rāmānuja and Madhva, attacked the doctrines of māyā and nirguṇa Brahman; these debates constitute a large part of later Vedantic literature.`,
+  },
+  {
+    title: "Adi Shankara",
+    url: "https://en.wikipedia.org/wiki/Adi_Shankara",
+    organization: "Wikipedia",
+    tags: ["adi shankara", "shankaracharya", "śaṅkarācārya", "शंकराचार्य", "आदि शंकराचार्य", "advaita", "philosopher"],
+    extract: `Adi Shankara (Sanskrit: आदि शङ्कराचार्य, Ādi Śaṅkarācārya; traditionally 788–820 CE, with scholarly dates ranging from the seventh to the early ninth century) was an Indian philosopher and theologian whose works consolidated the doctrine of Advaita Vedanta. Born, according to tradition, at Kaladi in present-day Kerala, he became a renunciant early in life, studied under Govinda Bhagavatpāda (a pupil of Gauḍapāda's lineage), and travelled across the Indian subcontinent debating rival schools.
+His most authoritative works are the commentaries on the Brahma Sutras (Brahmasūtra-bhāṣya), on the ten principal Upanishads, and on the Bhagavad Gītā. In them he argues that the Upanishads teach the identity of Ātman and Brahman, that the world of multiplicity is a superimposition (adhyāsa) upon the one reality caused by ignorance, and that liberation is the removal of that ignorance through knowledge. He accepted the provisional usefulness of ritual and devotion as purification but denied that action can directly produce liberation, since liberation is not an effect to be produced but a reality to be recognised.
+Tradition credits Shankara with founding four monasteries (maṭhas) at Sringeri in the south, Dwarka in the west, Puri in the east, and Jyotirmath (Badrinath) in the north, whose presiding teachers bear the title Śaṅkarācārya to this day. A large devotional and philosophical literature is attributed to him, though modern scholarship regards only a core of works as certainly authentic.
+Shankara's historical influence is immense: later Indian philosophy, whether following or opposing him, engaged his formulation of non-dualism, and modern interpreters from Vivekananda to Radhakrishnan treated his Advaita as a summit of Indian thought — an assessment that historians note is itself an interpretive judgement of the modern period.`,
+  },
+  {
+    title: "Ramanuja",
+    url: "https://en.wikipedia.org/wiki/Ramanuja",
+    organization: "Wikipedia",
+    tags: ["ramanuja", "ramanujacharya", "रामानुज", "रामानुजाचार्य", "vishishtadvaita", "विशिष्टाद्वैत", "sri vaishnavism"],
+    extract: `Ramanuja (Sanskrit: रामानुज, Rāmānuja; traditionally 1017–1137 CE) was an Indian philosopher, theologian, and the most influential teacher of the Viśiṣṭādvaita (qualified non-dualism) school of Vedanta and of the Śrī Vaiṣṇava tradition. Born at Sriperumbudur in Tamil Nadu, he served for much of his life as the head of the Ranganathaswamy temple at Srirangam.
+Against Advaita, Ramanuja argued that Brahman is not attributeless: Brahman is Nārāyaṇa (Viṣṇu), a personal God possessing infinite auspicious qualities. Individual selves (cit) and matter (acit) are real and constitute the "body" of Brahman, related to God as a body is related to its self — distinct, yet inseparable and utterly dependent. Hence reality is one qualified whole: non-dual, but internally differentiated. The world is no illusion; creation is the transformation of Brahman's body from a subtle to a manifest state.
+For Ramanuja the primary means to liberation is bhakti — loving, continuous meditation on God supported by ritual duty and knowledge — and, in the developed Śrī Vaiṣṇava tradition, prapatti, complete self-surrender to divine grace. Liberation is not the dissolution of individuality but the self's eternal, blissful communion with God in a state of service.
+His principal works are the Śrī Bhāṣya (a commentary on the Brahma Sutras), the Gītā Bhāṣya, Vedārthasaṅgraha, and shorter devotional and doctrinal texts. Ramanuja's synthesis of Vedantic exegesis with the devotional religion of the Tamil Āḻvārs shaped the later history of Vaishnavism across India and provided the chief classical alternative to Shankara's non-dualism.`,
+  },
+  {
+    title: "Madhvacharya",
+    url: "https://en.wikipedia.org/wiki/Madhvacharya",
+    organization: "Wikipedia",
+    tags: ["madhva", "madhvacharya", "मध्व", "मध्वाचार्य", "dvaita", "द्वैत", "tattvavada", "udupi"],
+    extract: `Madhvacharya (Sanskrit: मध्वाचार्य, Madhvācārya; 1238–1317 CE), also known as Pūrṇaprajña and Ānandatīrtha, was an Indian philosopher and the founder of the Dvaita (dualist) school of Vedanta, which he himself called Tattvavāda, "the doctrine of reality as it is". He was born at Pajaka near Udupi in coastal Karnataka and established the Krishna temple at Udupi together with eight monasteries (aṣṭa maṭhas) that continue his tradition.
+Madhva taught an uncompromising realism and pluralism. Viṣṇu is the supreme, independent (svatantra) reality; all other entities — individual selves and the material world — are real but eternally dependent (paratantra) on Him. He systematised reality through the doctrine of pañca-bheda, the five eternal differences: between God and the self, God and matter, self and matter, one self and another, and one material thing and another. Because the differences are real and eternal, the self never becomes identical with Brahman; liberation is the soul's enjoyment of its own nature in the presence of God, attained through correct knowledge, ethical action, and above all devotion, with liberation finally granted by Viṣṇu's grace.
+Madhva wrote thirty-seven works (the Sarvamūla), including commentaries on the Brahma Sutras, the Upanishads, and the Bhagavad Gītā, and independent treatises such as the Viṣṇu-tattva-vinirṇaya. He was a vigorous critic of Advaita, arguing that the doctrine of an attributeless Brahman and an illusory world contradicts both scripture and experience. A distinctive and controversial element of his theology is the doctrine that souls differ intrinsically in their spiritual capacity. The Haridāsa devotional movement of Karnataka, including poet-saints such as Purandara Dāsa, spread Madhva's dualist theology in the vernacular.`,
+  },
+  {
+    title: "Upanishads",
+    url: "https://en.wikipedia.org/wiki/Upanishads",
+    organization: "Wikipedia",
+    tags: ["upanishads", "upanishad", "उपनिषद", "उपनिषद्", "vedas", "brahman", "atman", "shruti"],
+    extract: `The Upanishads (Sanskrit: उपनिषद्, Upaniṣad) are late Vedic and post-Vedic Sanskrit texts that form the foundations of Hindu philosophy and are the primary scriptural basis of Vedanta; they are also called Vedānta, "the end of the Veda". Among the more than one hundred surviving texts, a group of ten to thirteen "principal Upanishads" — including the Bṛhadāraṇyaka, Chāndogya, Taittirīya, Aitareya, Kena, Kaṭha, Īśā, Muṇḍaka, Praśna, and Māṇḍūkya — are the oldest and most authoritative; the earliest are generally dated to the seventh–fifth centuries BCE, before or around the time of the Buddha.
+The central concern of the Upanishads is the relation between Brahman, the universal principle or ultimate reality, and Ātman, the self. Famous dialogues — Yājñavalkya's teaching to Maitreyī and to Janaka in the Bṛhadāraṇyaka, and Uddālaka Āruṇi's instruction of his son Śvetaketu ("tat tvam asi") in the Chāndogya — explore this identity or intimate relation. The Upanishads introduce and develop the doctrines of karma, rebirth (saṃsāra), and liberation (mokṣa), and they subordinate ritual to knowledge as the higher path.
+Because the Upanishadic statements are diverse — some emphasising strict identity of self and Brahman, others speaking of the self entering into or serving a supreme Lord — the later Vedantic schools could each claim scriptural support: Advaita read the texts through the identity statements, Viśiṣṭādvaita through passages describing the world and selves as God's body, and Dvaita through passages asserting eternal difference. The Brahma Sutras were composed precisely to harmonise these apparently conflicting statements, and every major ācārya wrote commentaries on the principal Upanishads.`,
+  },
+  {
+    title: "Brahman",
+    url: "https://en.wikipedia.org/wiki/Brahman",
+    organization: "Wikipedia",
+    tags: ["brahman", "ब्रह्म", "ब्रह्मन्", "ultimate reality", "atman", "आत्मा", "hindu metaphysics"],
+    extract: `In Hinduism, Brahman (Sanskrit: ब्रह्मन्) is the ultimate, unchanging reality — the cause, ground, and inner essence of all that exists. The concept emerges in the Vedas, where the word first denotes the sacred power of the ritual utterance, and reaches its classical formulation in the Upanishads, where Brahman is declared the source from which beings arise, in which they live, and into which they return (Taittirīya Upaniṣad 3.1).
+The Upanishads characterise Brahman both negatively and positively: neti neti, "not this, not this" (Bṛhadāraṇyaka), because no finite category captures it; and satyaṁ jñānam anantaṁ brahma, "Brahman is truth, knowledge, infinity" (Taittirīya 2.1). The later tradition summarises Brahman's nature as sat-cit-ānanda — being, consciousness, and bliss.
+The relation between Brahman and Ātman, the individual self, is the defining problem of Vedanta. Advaita Vedanta holds that Brahman and Ātman are strictly identical, and that the perception of difference is the product of ignorance; on this view Brahman in itself is nirguṇa, without attributes, while the personal creator God (Īśvara) is Brahman as viewed through māyā. Viśiṣṭādvaita holds that Brahman is a personal God whose body is the world of selves and matter, so the self is a real mode of Brahman, distinct yet inseparable. Dvaita holds that Brahman (identified with Viṣṇu) and the individual self are eternally and really distinct, the self being wholly dependent on God. Bhedābheda traditions maintain that difference and non-difference are both real, as sparks are both one with and different from their fire.
+These rival readings of the same Upanishadic sentences — debated with rigorous logic in the commentaries of Śaṅkara, Rāmānuja, Madhva, and their successors — made the doctrine of Brahman the central axis of Indian metaphysical debate for over a millennium.`,
+  },
+  {
+    title: "Brahma Sutras",
+    url: "https://en.wikipedia.org/wiki/Brahma_Sutras",
+    organization: "Wikipedia",
+    tags: ["brahma sutras", "ब्रह्मसूत्र", "badarayana", "बादरायण", "vedanta sutra", "prasthanatrayi"],
+    extract: `The Brahma Sutras (Sanskrit: ब्रह्मसूत्र), also known as the Vedānta Sūtras or Śārīraka Sūtras, are a Sanskrit text attributed to the sage Bādarāyaṇa, composed to systematise and harmonise the teachings of the Upanishads. Scholars variously date the text's final form to between roughly 200 BCE and 200 CE. It consists of 555 aphorisms (sūtras) in four chapters (adhyāyas): Samanvaya (harmony — all scripture teaches Brahman), Avirodha (non-conflict — replies to objections), Sādhana (the means of realisation), and Phala (the fruit — liberation).
+The sutras are so terse that they cannot be understood without a commentary, and it was through commentaries (bhāṣyas) on this text that every major school of Vedanta defined itself. Ādi Śaṅkara's Brahmasūtra-bhāṣya is the oldest surviving complete commentary and reads the sutras non-dualistically. Rāmānuja's Śrī Bhāṣya reads the same aphorisms as teaching a personal Brahman whose body is the world; Madhva's commentary reads them dualistically; Nimbārka, Vallabha, Bhāskara, and Baladeva Vidyābhūṣaṇa produced further commentaries for their traditions. The fact that one aphoristic text supports such divergent systems is itself central to the history of Vedanta: authority lay in the Prasthānatrayī — Upanishads, Brahma Sutras, and Bhagavad Gītā — and philosophical originality took the form of commentary.
+The first sutra, athāto brahma-jijñāsā ("Now, therefore, the inquiry into Brahman"), and the second, janmādy asya yataḥ ("That from which the origin and so forth of this world proceed"), set the work's program: a disciplined inquiry into the ultimate cause of the world as taught in the Upanishads.`,
+  },
+  {
+    title: "Moksha",
+    url: "https://en.wikipedia.org/wiki/Moksha",
+    organization: "Wikipedia",
+    tags: ["moksha", "mokṣa", "मोक्ष", "liberation", "mukti", "samsara", "jnana", "bhakti", "karma"],
+    extract: `Moksha (Sanskrit: मोक्ष, mokṣa), also called mukti, is the concept of liberation from saṃsāra, the beginningless cycle of death and rebirth driven by karma. In Hindu thought it is the last of the four aims of human life (puruṣārthas), beyond duty (dharma), prosperity (artha), and pleasure (kāma).
+The Vedantic schools agree that moksha is the highest good but disagree sharply about its nature and means. In Advaita Vedanta, liberation is the direct recognition that the self was never really bound: the knowledge of the identity of Ātman and Brahman dissolves ignorance, and the liberated state is not a new condition but reality as it always was. Advaita accepts jīvanmukti, liberation while still living. In Viśiṣṭādvaita, moksha is the soul's release from karma into eternal communion with Nārāyaṇa, attained through bhakti and self-surrender (prapatti) and enjoyed in the divine realm after death; the self remains an individual in loving service of God. In Dvaita, likewise, liberation preserves the eternal distinction between the soul and Viṣṇu, and is granted by God's grace to souls fitted for it; the liberated soul enjoys bliss according to its intrinsic capacity.
+Classical discussions organise the paths to liberation as jñāna-yoga (the discipline of knowledge), bhakti-yoga (devotion), and karma-yoga (desireless action), with each school ranking them differently — Advaita subordinating action and devotion to knowledge, while the theistic schools make devotion supreme and treat knowledge as its component. The Bhagavad Gītā, which weaves all three together, is claimed by every school as scriptural support for its own ordering.`,
+  },
+  {
+    title: "Bhedabheda",
+    url: "https://en.wikipedia.org/wiki/Bhedabheda",
+    organization: "Wikipedia",
+    tags: ["bhedabheda", "भेदाभेद", "bhaskara", "nimbarka", "dvaitadvaita", "shuddhadvaita", "achintya bhedabheda", "vallabha", "chaitanya"],
+    extract: `Bhedābheda (Sanskrit: भेदाभेद, "difference and non-difference") is a family of Vedanta traditions holding that the individual self is both different and not different from Brahman, as a wave is both one with and distinct from the ocean, or sparks with their fire. Bhedābheda ideas are older than Śaṅkara: early Vedantins such as Bhartṛprapañca held versions of the view, and the school's classical exponents include Bhāskara (eighth–ninth century CE), who attacked Śaṅkara's doctrine of illusion while defending real transformation (pariṇāma) of Brahman into the world.
+Several devotional schools of Vedanta belong to this family. Nimbārka's Dvaitādvaita ("dualistic non-dualism", around the thirteenth century or earlier) teaches that selves and world are simultaneously different and non-different from Kṛṣṇa. Vallabhācārya (1479–1531) founded Śuddhādvaita ("pure non-dualism"), in which the world is a real manifestation of Kṛṣṇa without the doctrine of māyā, and the path is puṣṭi-mārga, the way of grace. Caitanya Mahāprabhu (1486–1534) inspired the Gauḍīya Vaiṣṇava doctrine of Acintya-bhedābheda, "inconceivable difference and non-difference", systematised by the Gosvāmīs of Vrindavan and later carried worldwide by movements in his lineage.
+These schools kept alive, against Advaita, the conviction that the world and the individual devotee are real, while refusing, against strict dualism, to make the self wholly other than God. Their theologies underpinned the great devotional (bhakti) movements of medieval north India, and their debates with Advaita and Dvaita form a substantial part of late medieval Sanskrit philosophical literature.`,
+  },
+  {
+    title: "Neo-Vedanta",
+    url: "https://en.wikipedia.org/wiki/Neo-Vedanta",
+    organization: "Wikipedia",
+    tags: ["neo-vedanta", "vivekananda", "विवेकानंद", "ramakrishna", "modern hinduism", "radhakrishnan", "ram mohan roy"],
+    extract: `Neo-Vedanta, also called modern Vedanta or neo-Hinduism, is the name scholars give to interpretations of Vedanta that developed from the nineteenth century onward in interaction with colonial modernity, Christian missions, and Western philosophy. Ram Mohan Roy (1772–1833), founder of the Brahmo Samaj, published early translations of Upanishads and presented Vedanta as a rational monotheism. Swami Vivekananda (1863–1902), disciple of the mystic Ramakrishna, gave Neo-Vedanta its most influential form: in his addresses at the 1893 World's Parliament of Religions in Chicago and in later lectures, he presented Advaita Vedanta as a universal, scientific religion, taught that all religions are paths to the same goal, and coupled non-dualism with an ethic of service to humanity, institutionalised in the Ramakrishna Mission (founded 1897).
+Sarvepalli Radhakrishnan (1888–1975), philosopher and later President of India, presented Vedanta in academic English as the philosophical core of Hinduism, while sages such as Ramana Maharshi (1879–1950) renewed the experiential tradition of self-inquiry that modern audiences associate with Advaita.
+Historians of religion note that Neo-Vedanta involves genuine reinterpretation: classical Advaita was a scholastic, exegetical tradition bound to scripture and renunciation, whereas Neo-Vedanta emphasises direct experience, religious universalism, and social reform, sometimes minimising the differences among the classical schools. Assessing what is continuous and what is new in modern Vedanta remains an active scholarly question, but the modern movements decisively shaped how Vedanta is understood today in India and worldwide.`,
+  },
+  {
+    title: "वेदांत दर्शन",
+    url: "https://hi.wikipedia.org/wiki/वेदान्त_दर्शन",
+    organization: "विकिपीडिया",
+    language: "hi",
+    tags: ["वेदांत", "वेदान्त", "vedanta", "दर्शन", "उपनिषद", "ब्रह्म", "आत्मा", "शंकराचार्य", "रामानुज", "मध्व"],
+    extract: `वेदांत (संस्कृत: वेदान्त) भारतीय दर्शन की छह आस्तिक परंपराओं में से एक है। 'वेदांत' शब्द का शाब्दिक अर्थ है 'वेदों का अंत' — अर्थात उपनिषद्, जो वैदिक साहित्य के अंतिम भाग हैं। बाद में यही शब्द उन दार्शनिक संप्रदायों के लिए प्रयुक्त होने लगा जो उपनिषदों की व्याख्या करते हैं। वेदांत को उत्तर मीमांसा भी कहा जाता है।
+
+वेदांत के सभी संप्रदाय तीन मूल ग्रंथों — प्रस्थानत्रयी — को प्रमाण मानते हैं: उपनिषद्, बादरायण के ब्रह्मसूत्र और भगवद्गीता। वेदांत का केंद्रीय प्रश्न ब्रह्म (परम सत्ता), आत्मा (जीव) और जगत के पारस्परिक संबंध का है। ब्रह्म और आत्मा एक हैं या भिन्न — इसी प्रश्न के उत्तर के आधार पर वेदांत की प्रमुख शाखाएँ बनीं।
+
+अद्वैत वेदांत के प्रवर्तक आदि शंकराचार्य (परंपरागत तिथि 788–820 ई.) माने जाते हैं। उनके अनुसार केवल ब्रह्म ही परम सत्य है, आत्मा वस्तुतः ब्रह्म से अभिन्न है, और नाम-रूप वाला जगत अज्ञान अथवा माया के कारण प्रतीत होता है। ज्ञान से अज्ञान का निवारण ही मोक्ष है। 'तत्त्वमसि' और 'अहं ब्रह्मास्मि' जैसे महावाक्य इसी अभेद के प्रतिपादक माने जाते हैं।
+
+विशिष्टाद्वैत के प्रमुख आचार्य रामानुजाचार्य (परंपरागत तिथि 1017–1137 ई.) हैं। उनके अनुसार ब्रह्म सगुण है — वह नारायण है, अनंत कल्याण-गुणों से युक्त; चित् (जीव) और अचित् (जड़ जगत) उसके शरीर हैं। जीव और जगत सत्य हैं, ब्रह्म से भिन्न होते हुए भी उससे अपृथक्। मोक्ष का मुख्य साधन भक्ति और प्रपत्ति (शरणागति) है।
+
+द्वैत वेदांत के संस्थापक मध्वाचार्य (1238–1317 ई.) हैं, जिन्होंने अपने मत को तत्त्ववाद कहा। उनके अनुसार विष्णु ही एकमात्र स्वतंत्र तत्त्व हैं; जीव और जगत नित्य, सत्य किंतु परतंत्र हैं। मध्व ने पंचभेद का सिद्धांत दिया — ईश्वर-जीव, ईश्वर-जड़, जीव-जड़, जीव-जीव और जड़-जड़ के बीच नित्य भेद। मोक्ष ईश्वर-कृपा से मिलता है और मुक्त अवस्था में भी जीव ईश्वर से भिन्न रहता है।
+
+इनके अतिरिक्त भेदाभेद परंपराएँ भी हैं — भास्कर का औपाधिक भेदाभेद, निम्बार्क का द्वैताद्वैत, वल्लभाचार्य का शुद्धाद्वैत और चैतन्य महाप्रभु का अचिंत्य भेदाभेद — जो भेद और अभेद दोनों को वास्तविक मानती हैं। इन संप्रदायों ने मध्यकालीन भक्ति आंदोलनों को दार्शनिक आधार दिया।
+
+आधुनिक काल में राजा राममोहन राय, स्वामी विवेकानंद, सर्वपल्ली राधाकृष्णन और रमण महर्षि ने वेदांत की नई व्याख्याएँ प्रस्तुत कीं। विवेकानंद ने 1893 के शिकागो धर्म-संसद में वेदांत को सार्वभौमिक धर्म के रूप में प्रस्तुत किया और सेवा के आदर्श से जोड़ा। विद्वान इस आधुनिक धारा को नव्य-वेदांत कहते हैं और शास्त्रीय परंपरा से उसके अंतर को रेखांकित करते हैं।`,
+  },
 ];
 
 for (const d of docs) {
-  const slug = d.title.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+  const slug = d.title.toLowerCase().replace(/[^a-z0-9\u0900-\u097f]+/g, "-").replace(/^-|-$/g, "");
   fs.writeFileSync(
     path.join(dir, slug + ".json"),
-    JSON.stringify({ ...d, license: "CC BY-SA 4.0", retrievedAt: now, language: "en" })
+    JSON.stringify({ ...d, license: "CC BY-SA 4.0", retrievedAt: now, language: d.language || "en" })
   );
 }
 console.log("seeded", docs.length, "corpus docs");

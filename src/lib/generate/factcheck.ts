@@ -127,7 +127,7 @@ async function checkClaim(claim: string, doc: EbookDocument): Promise<FactFlag> 
 function overlap(claim: string, corpus: string): boolean {
   const tokens = claim
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/[^\p{L}\p{M}\p{N}\s]/gu, " ")
     .split(/\s+/)
     .filter((w) => w.length > 3);
   if (tokens.length < 4) return corpus.toLowerCase().includes(claim.toLowerCase().slice(0, 40));

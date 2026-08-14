@@ -11,6 +11,7 @@ import { evaluateCandidate } from "./relevance";
 import { finalizeSourceRecord, isHttpUrl, UNVERIFIED_LABEL } from "./citation";
 import { nowIso } from "../db";
 import { classifyClaim, buildTopicProfile, type TopicProfile } from "./relevance";
+import { termsInText } from "./translit";
 
 export interface ChapterResearchProgress {
   chapterIndex: number;
@@ -34,7 +35,10 @@ export function sourceMatchesChapter(s: SourceRecord, item: OutlineItem): boolea
   const hay = `${s.title} ${s.snippet || ""} ${(s.extractedText || "").slice(0, 4000)}`.toLowerCase();
   const words = wordsOf(item).map((w) => w.toLowerCase());
   if (!words.length) return false;
-  return words.filter((w) => hay.includes(w)).length >= 1;
+  if (words.some((w) => hay.includes(w))) return true;
+  // Cross-script fallback: a Hindi chapter title must still match English
+  // sources about the same subject (वेदांत ↔ Vedanta, शंकराचार्य ↔ Shankaracharya).
+  return termsInText(hay, words).length >= 1;
 }
 
 function mergeSource(existing: SourceRecord[], incoming: SourceRecord): SourceRecord[] {
