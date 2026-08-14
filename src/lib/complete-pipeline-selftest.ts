@@ -6,6 +6,9 @@ import { createEbook, createJob, deleteEbook, getEbook } from "./ebooks";
 import { getStore } from "./db";
 import { isRunning, startGeneration } from "./generate/runner";
 import { DEFAULT_SETTINGS } from "./types";
+import { ACHHOOT_HINDI_TITLES } from "./generate/outline";
+import { validateCompleteAchhootContent } from "./generate/achhoot";
+import { buildBookPages } from "./book/pages";
 
 const TOPIC = "अछूत कौन थे और अछूत कैसे बने?";
 
@@ -46,9 +49,31 @@ async function main() {
   const doc = await wait(ebook.id);
   add("pipeline reaches Ready", doc.status === "complete", `${doc.status}: ${doc.error || doc.progress.message}`);
   add("exact Hindi title, author, and 14 chapters", doc.title === TOPIC && doc.settings.authorName === "Phuleshwar" && doc.chapters.length === 14);
+  add("exact commissioned chapter titles and order", doc.chapters.every((chapter, index) => chapter.title === ACHHOOT_HINDI_TITLES[index]));
 
-  const body = [doc.title, doc.introduction, doc.conclusion, ...doc.chapters.flatMap((chapter) => [chapter.title, ...chapter.sections.map((section) => section.html)])].join("\n");
+  const body = [
+    doc.title,
+    doc.introduction,
+    doc.conclusion,
+    ...doc.chapters.flatMap((chapter) => [
+      chapter.title,
+      ...chapter.sections.map((section) => section.html),
+      ...chapter.questions.flatMap((question) => [question.question, question.answer]),
+    ]),
+  ].join("\n");
+  const contentErrors = doc.chapters.flatMap((chapter) => validateCompleteAchhootContent(chapter));
+  const analyticalLengths = doc.chapters.map((chapter) =>
+    (chapter.sections.map((section) => section.html.replace(/<[^>]+>/g, " ")).join(" ").match(/[\p{L}\p{N}]+/gu) || []).length
+  );
+  add("all required historical teaching sections are complete", contentErrors.length === 0, contentErrors.slice(0, 3).join("; "));
+  add("chapter bodies meet substantive length without answer padding", analyticalLengths.every((count) => count >= 1_500 && count <= 3_100), analyticalLengths.join(", "));
+  add("all 70 review questions have substantive three-paragraph answers", doc.chapters.every((chapter) =>
+    chapter.questions.length === 5 && chapter.questions.every((question) => question.answer.split(/\n{2,}/).filter((part) => part.trim().length > 80).length >= 3)
+  ));
+  add("no notes, placeholders, or deferred answers", !/placeholder|lorem ipsum|\bTBD\b|\[यहाँ|शोध पर निर्भर है/i.test(body));
   add("Hindi renders without missing Unicode characters", /[\u0900-\u097F]/.test(body) && !/[�□]/.test(body) && doc.languageCheck?.passed === true);
+  const browserPages = JSON.stringify(buildBookPages(doc));
+  add("browser and live 3D pages include stored complete answers", (browserPages.match(/सीधा उत्तर/g) || []).length >= 70);
 
   const images = doc.chapters.flatMap((chapter) => chapter.images || []);
   const imageChecks = await Promise.all(images.map(async (image) => {
@@ -73,21 +98,29 @@ async function main() {
     const names = Object.keys(epub.files);
     const html = (await Promise.all(names.filter((name) => name.endsWith(".xhtml")).map((name) => epub.file(name)!.async("string")))).join("\n");
     add("EPUB embeds font and local images", names.includes("OEBPS/fonts/NotoSansDevanagari-Regular.ttf") && names.some((name) => /^OEBPS\/images\/ch/.test(name)) && !/src=["']\/api\//.test(html));
-  } else add("EPUB embeds font and local images", false);
+    add("EPUB contains all chapter text and all complete answers", ACHHOOT_HINDI_TITLES.every((title) => html.includes(title)) && (html.match(/सीधा उत्तर/g) || []).length >= 70);
+  } else {
+    add("EPUB embeds font and local images", false);
+    add("EPUB contains all chapter text and all complete answers", false);
+  }
 
   if (outputs.flipbook && fs.existsSync(outputs.flipbook)) {
     const zip = await JSZip.loadAsync(fs.readFileSync(outputs.flipbook));
     const names = Object.keys(zip.files);
     const index = await zip.file("index.html")!.async("string");
+    const data = await zip.file("book-data.json")!.async("string");
     add("3D ZIP extracts to a root offline index", names.includes("index.html") && names.includes("book-data.json") && names.includes("fonts/NotoSansDevanagari-Regular.ttf"));
     add("offline figures use only bundled paths", names.some((name) => /^images\/fig-/.test(name)) && !/src=["'](?:https?:|\/api\/)/.test(index));
+    add("3D ZIP contains all chapter text and all complete answers", ACHHOOT_HINDI_TITLES.every((title) => data.includes(title)) && (data.match(/सीधा उत्तर/g) || []).length >= 70);
     add("Android touch and page turning are included", /viewport/.test(index) && /onpointerdown/.test(index) && /rotateY\(-180deg\)/.test(index) && /@media\(max-width:620px\)/.test(index));
   } else {
     add("3D ZIP extracts to a root offline index", false);
     add("offline figures use only bundled paths", false);
+    add("3D ZIP contains all chapter text and all complete answers", false);
     add("Android touch and page turning are included", false);
   }
-  add("standalone offline 3D HTML created", Boolean(outputs.html && fs.existsSync(outputs.html) && fs.statSync(outputs.html).size > 2_000));
+  const standalone = outputs.html && fs.existsSync(outputs.html) ? fs.readFileSync(outputs.html, "utf8") : "";
+  add("standalone offline 3D HTML contains all complete answers", standalone.length > 2_000 && (standalone.match(/सीधा उत्तर/g) || []).length >= 70);
 
   deleteEbook(ebook.id, userId);
   const after = getStore().ebooks.filter((row) => row.userId !== userId).length;

@@ -157,6 +157,19 @@ export async function exportFlipbook(doc: EbookDocument): Promise<Buffer> {
     text: (text || "").trim(),
     number,
   });
+  const addTextPages = (title: string, text: string, number = "") => {
+    for (const [partIndex, part] of paginate(plain(text)).entries()) {
+      pages.push(
+        make(
+          "page",
+          `${title}${partIndex ? ((doc.outputLanguage || doc.language) === "hi" ? " — जारी" : " — continued") : ""}`,
+          `<p>${escapeHtml(part)}</p>`,
+          part,
+          number
+        )
+      );
+    }
+  };
 
   pages.push(
     make(
@@ -172,7 +185,7 @@ export async function exportFlipbook(doc: EbookDocument): Promise<Buffer> {
 
   const hindi = (doc.outputLanguage || doc.language) === "hi";
   pages.push(make("page", hindi ? "शीर्षक पृष्ठ" : "Title Page", `<h1>${escapeHtml(doc.title)}</h1><p>${escapeHtml(doc.subtitle || "")}</p><p>${escapeHtml(doc.settings.authorName || "Folio Research")}</p>`, `${doc.title} ${doc.subtitle || ""}`, ""));
-  pages.push(make("page", hindi ? "प्रकाशन सूचना" : "Publication Information", `<p>© ${new Date(doc.createdAt).getFullYear()} ${escapeHtml(doc.settings.authorName || "Folio Research")}</p><p>${hindi ? "शोध-आधारित पुस्तक · स्रोत उद्धृत" : "Research-based book · Sources cited"}</p>`, "", ""));
+  pages.push(make("page", hindi ? "प्रकाशन सूचना" : "Publication Information", `<p>© ${new Date(doc.createdAt).getFullYear()} ${escapeHtml(doc.settings.authorName || "Folio Research")}</p><p>${hindi ? "शोध-आधारित पुस्तक · स्रोत उद्धृत" : "Research-based book · Sources cited"}</p>${doc.disclaimer ? `<p>${escapeHtml(doc.disclaimer)}</p>` : ""}`, doc.disclaimer || "", ""));
   pages.push(make("page", hindi ? "प्राक्कथन" : "Preface", `<p>${hindi ? "यह पुस्तक विश्वसनीय स्रोतों, स्पष्ट उद्धरणों और तथ्य तथा व्याख्या के भेद के साथ तैयार की गई है।" : "This book was prepared with reliable sources, traceable citations, and a clear distinction between evidence and interpretation."}</p>`, "", ""));
   const tocIndex = pages.length;
   pages.push(make("contents", hindi ? "विषय-सूची" : "Contents", "", "", ""));
@@ -184,12 +197,20 @@ export async function exportFlipbook(doc: EbookDocument): Promise<Buffer> {
     pages.push(
       make(
         "divider",
-        `Chapter ${i + 1}`,
+        `${hindi ? "अध्याय" : "Chapter"} ${i + 1}`,
         `<p class="chap">${escapeHtml(chapter.title)}</p>`,
         chapter.title,
         String(i + 1)
       )
     );
+
+    if (chapter.learningObjectives.length) {
+      addTextPages(
+        hindi ? "अधिगम उद्देश्य" : "Learning objectives",
+        chapter.learningObjectives.map((objective, index) => `${index + 1}. ${objective}`).join("\n\n"),
+        String(i + 1)
+      );
+    }
 
     const figures = (chapter.images || [])
       .map((img) => {
@@ -216,7 +237,7 @@ export async function exportFlipbook(doc: EbookDocument): Promise<Buffer> {
         pages.push(
           make(
             "page",
-            `${section.heading || chapter.title}${partIndex ? " — continued" : ""}`,
+            `${section.heading || chapter.title}${partIndex ? (hindi ? " — जारी" : " — continued") : ""}`,
             `<p>${escapeHtml(part)}</p>`,
             part,
             String(pages.length + 1)
@@ -225,75 +246,36 @@ export async function exportFlipbook(doc: EbookDocument): Promise<Buffer> {
       }
     }
 
-    // The 3D reader must show the finished book, which includes the review
-    // material. Answers and MCQ explanations are printed with the questions
-    // rather than withheld.
-    const reviewLabels = {
-      summary: hindi ? "सारांश" : "Summary",
-      questions: hindi ? "प्रश्न और उत्तर" : "Questions & Answers",
-      mcqs: hindi ? "बहुविकल्पीय प्रश्न" : "Multiple-choice questions",
-      answer: hindi ? "उत्तर" : "Answer",
-      explanation: hindi ? "व्याख्या" : "Explanation",
-    };
-
-    if (chapter.summary?.trim()) {
-      const summaryText = plain(chapter.summary);
-      for (const [partIndex, part] of paginate(summaryText).entries()) {
-        pages.push(
-          make(
-            "page",
-            `${reviewLabels.summary} — ${chapter.title}${partIndex ? " — continued" : ""}`,
-            `<p>${escapeHtml(part)}</p>`,
-            part,
-            String(pages.length + 1)
-          )
-        );
-      }
+    if (chapter.keyPoints.length) {
+      addTextPages(
+        hindi ? "मुख्य बिंदु" : "Key points",
+        chapter.keyPoints.map((point) => `• ${point}`).join("\n\n"),
+        String(i + 1)
+      );
     }
-
-    if (chapter.questions.length) {
-      const qaText = chapter.questions
-        .map((q, n) => `${n + 1}. ${plain(q.question)}\n${reviewLabels.answer}: ${plain(q.answer)}`)
-        .join("\n\n");
-      for (const [partIndex, part] of paginate(qaText).entries()) {
-        pages.push(
-          make(
-            "page",
-            `${reviewLabels.questions} — ${chapter.title}${partIndex ? " — continued" : ""}`,
-            part
-              .split(/\n{2,}/)
-              .map((block) => `<p>${escapeHtml(block).replace(/\n/g, "<br/>")}</p>`)
-              .join(""),
-            part,
-            String(pages.length + 1)
-          )
-        );
-      }
+    if (chapter.commonMistakes.length) {
+      addTextPages(
+        hindi ? "सामान्य भूलें" : "Common mistakes",
+        chapter.commonMistakes.map((mistake) => `• ${mistake}`).join("\n\n"),
+        String(i + 1)
+      );
     }
-
-    if (chapter.mcqs.length) {
-      const mcqText = chapter.mcqs
-        .map((m, n) => {
-          const options = (m.options || []).map((o, j) => `${String.fromCharCode(65 + j)}. ${o}`).join("\n");
-          return `${n + 1}. ${plain(m.question)}\n${options}\n${reviewLabels.answer}: ${m.answer}${
-            m.explanation ? `\n${reviewLabels.explanation}: ${plain(m.explanation)}` : ""
-          }`;
-        })
-        .join("\n\n");
-      for (const [partIndex, part] of paginate(mcqText).entries()) {
-        pages.push(
-          make(
-            "page",
-            `${reviewLabels.mcqs} — ${chapter.title}${partIndex ? " — continued" : ""}`,
-            part
-              .split(/\n{2,}/)
-              .map((block) => `<p>${escapeHtml(block).replace(/\n/g, "<br/>")}</p>`)
-              .join(""),
-            part,
-            String(pages.length + 1)
-          )
-        );
-      }
+    if (chapter.summary) {
+      addTextPages(hindi ? "अध्याय सारांश" : "Chapter summary", chapter.summary, String(i + 1));
+    }
+    for (const [questionIndex, question] of chapter.questions.entries()) {
+      addTextPages(
+        `${hindi ? "प्रश्न" : "Question"} ${questionIndex + 1} — ${hindi ? "पूरा उत्तर" : "Complete answer"}`,
+        `${question.question}\n\n${hindi ? "उत्तर" : "Answer"}: ${question.answer}${question.explanation ? `\n\n${question.explanation}` : ""}`,
+        String(i + 1)
+      );
+    }
+    for (const [questionIndex, question] of chapter.mcqs.entries()) {
+      addTextPages(
+        `${hindi ? "बहुविकल्पीय प्रश्न" : "Multiple-choice question"} ${questionIndex + 1}`,
+        `${question.question}\n\n${(question.options || []).join(" · ")}\n\n${hindi ? "उत्तर" : "Answer"}: ${question.answer}${question.explanation ? `\n\n${question.explanation}` : ""}`,
+        String(i + 1)
+      );
     }
   }
 
@@ -313,6 +295,15 @@ export async function exportFlipbook(doc: EbookDocument): Promise<Buffer> {
         ""
       )
     );
+  }
+
+  if (doc.faqs.length) {
+    for (const [faqIndex, faq] of doc.faqs.entries()) {
+      addTextPages(
+        `${hindi ? "अक्सर पूछा गया प्रश्न" : "Frequently asked question"} ${faqIndex + 1}`,
+        `${faq.question}\n\n${hindi ? "उत्तर" : "Answer"}: ${faq.answer}`
+      );
+    }
   }
 
   if (doc.sources.length) {

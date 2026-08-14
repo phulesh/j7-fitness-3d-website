@@ -101,6 +101,7 @@ export async function exportEpub(doc: EbookDocument, destPath: string): Promise<
       ...doc.chapters.map((c, i) => `<li><a href="chapter-${i + 1}.xhtml">${esc(c.title)}</a></li>`),
       `<li><a href="conclusion.xhtml">${esc(labels.conclusion)}</a></li>`,
       doc.glossary.length ? `<li><a href="glossary.xhtml">${esc(labels.glossary)}</a></li>` : "",
+      doc.faqs.length ? `<li><a href="faq.xhtml">${esc(labels.faq)}</a></li>` : "",
       `<li><a href="references.xhtml">${esc(labels.references)}</a></li>`,
     ].join("\n");
     chaptersXhtml.push({
@@ -186,6 +187,22 @@ export async function exportEpub(doc: EbookDocument, destPath: string): Promise<
         `<h1>${esc(labels.glossary)}</h1><dl>${doc.glossary
           .map((g) => `<dt>${esc(g.term)}</dt><dd>${esc(g.definition)}${g.context ? `<br/><small>${esc(g.context)}</small>` : ""}</dd>`)
           .join("")}</dl>`,
+        rtl,
+        doc.language
+      ),
+    });
+  }
+
+  if (doc.faqs.length) {
+    chaptersXhtml.push({
+      id: "faq",
+      href: "faq.xhtml",
+      title: labels.faq,
+      html: wrap(
+        labels.faq,
+        `<h1>${esc(labels.faq)}</h1>${doc.faqs
+          .map((faq, index) => `<section><h2>${index + 1}. ${esc(faq.question)}</h2>${block(faq.answer)}</section>`)
+          .join("\n")}`,
         rtl,
         doc.language
       ),

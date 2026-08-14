@@ -10,6 +10,8 @@ import { exportPdf } from "../export/pdf";
 import { exportDocx } from "../export/docx";
 import { exportEpub } from "../export/epub";
 import { exportFlipbook, exportStandaloneFlipbookHtml } from "../export/flipbook";
+import { isAchhootResearchTopic, ACHHOOT_HINDI_TITLES } from "./outline";
+import { validateCompleteAchhootContent } from "./achhoot";
 
 export type QualityStage = "generating_figures" | "designing_pages" | "creating_3d" | "building_pdf" | "building_epub" | "building_html" | "quality_check";
 
@@ -182,9 +184,55 @@ export async function runFinalQualityCheck(
   checks.push(item("citations", "No invented citation identifiers", invalidCitations.length === 0, invalidCitations.length ? invalidCitations.join(", ") : undefined, citationRepair.repaired));
   checks.push(item("sources", "Source provenance", doc.sources.length > 0 && doc.sources.every((source) => /^https?:\/\//.test(source.url) || source.url.startsWith("folio-upload://")), `${doc.sources.length} sources`));
 
+  if (isAchhootResearchTopic(doc.analysis?.topic || doc.settings.topic)) {
+    const chapterErrors = doc.chapters.flatMap((chapter, index) =>
+      validateCompleteAchhootContent(chapter).map((error) => `अध्याय ${index + 1}: ${error}`)
+    );
+    const exactTitles = doc.chapters.length === 14 && doc.chapters.every((chapter, index) => chapter.title === ACHHOOT_HINDI_TITLES[index]);
+    const placeholders = /\[यहाँ|placeholder|lorem ipsum|शोध पर निर्भर है|उत्तर स्रोत के प्रकार और लेखक के अनुमान पर निर्भर करता है|\bTBD\b/i.test(allText);
+    const completeAnswers = doc.chapters.every((chapter) =>
+      chapter.questions.length >= 5 &&
+      chapter.questions.length <= 10 &&
+      chapter.questions.every((question) => question.answer.split(/\n{2,}/).filter((paragraph) => paragraph.trim().length > 40).length >= 3)
+    );
+    const conclusions = doc.chapters.every((chapter) =>
+      chapter.sections.some((section) => /अध्याय का निष्कर्ष/.test(section.heading) && section.html.replace(/<[^>]+>/g, " ").trim().length > 180)
+    );
+    const analyticalLengths = doc.chapters.map((chapter) =>
+      (chapter.sections.map((section) => section.html.replace(/<[^>]+>/g, " ")).join(" ").match(/[\p{L}\p{N}]+/gu) || []).length
+    );
+    // The commissioned 1,500–2,500-word target applies to the prose body;
+    // numbered figure explanations and source-analysis tables can add a modest
+    // amount. Review answers are deliberately excluded so they cannot pad it.
+    const substantiveLengths = analyticalLengths.every((length) => length >= 1_500 && length <= 3_100);
+    const citedChapters = doc.chapters.every((chapter) => chapter.sourceIds.length > 0 && chapter.sourceIds.every((id) => sourceIds.has(id)));
+    const citedSourceRecords = [...new Set(citedIds)].map((id) => doc.sources.find((source) => Number(source.id) === id));
+    const traceableCitations = citedSourceRecords.length > 0 && citedSourceRecords.every(
+      (source) => Boolean(source && source.verificationStatus === "verified" && source.title && /^https?:\/\//.test(source.url))
+    );
+    const noUnresolvedMarkersOrPageClaims = !/{{[a-z0-9_-]+}}|(?:\bp{1,2}\.|पृष्ठ)\s*\d+/i.test(allText);
+    checks.push(item("achhoot-titles", "Exact fourteen commissioned historical chapters", exactTitles));
+    checks.push(item("achhoot-structure", "Every chapter has all required teaching sections", chapterErrors.length === 0, chapterErrors.slice(0, 8).join("; ") || undefined));
+    checks.push(item("achhoot-answers", "Every end-of-chapter question has a complete three-paragraph answer", completeAnswers));
+    checks.push(item("achhoot-conclusions", "Every chapter has a substantive conclusion", conclusions));
+    checks.push(item("achhoot-length", "Each analytical chapter body is substantive without review-answer padding", substantiveLengths, analyticalLengths.join(", ")));
+    checks.push(item("achhoot-cited", "Every chapter cites persisted canonical sources", citedChapters));
+    checks.push(item("achhoot-provenance", "Every cited source has verified, traceable provenance", traceableCitations));
+    checks.push(item("achhoot-page-claims", "No unresolved citation markers or invented page-number claims", noUnresolvedMarkersOrPageClaims));
+    checks.push(item("achhoot-placeholders", "No placeholders, research notes, or deferred answers", !placeholders));
+  }
+
   onStage?.("designing_pages", 87, "Designing pages and checking navigation...");
   const pages = buildBookPages(doc);
   checks.push(item("pages", "Pages, page numbers, and contents", pages.length >= doc.chapters.length + 3 && pages.every((page, index) => page.index === index && Boolean(page.pageLabel))));
+
+  // Do not package an outline-only, uncited, or incomplete manuscript. File
+  // generation begins only after every content/citation/figure preflight check
+  // has passed; export-specific checks run against the resulting files below.
+  const preflightFailed = checks.filter((check) => !check.passed);
+  if (preflightFailed.length) {
+    throw new Error(`Pre-export quality check failed: ${preflightFailed.map((check) => check.label).join(", ")}`);
+  }
 
   const paths = outputPaths(doc);
   onStage?.("creating_3d", 90, "Creating interactive 3D book...");
@@ -208,6 +256,7 @@ export async function runFinalQualityCheck(
   const zip = await JSZip.loadAsync(fs.readFileSync(paths.flipbook!));
   const zipNames = Object.keys(zip.files);
   const offlineIndex = await zip.file("index.html")!.async("string");
+  const flipbookData = await zip.file("book-data.json")!.async("string");
   const standalone = fs.readFileSync(paths.html!, "utf8");
 
   checks.push(item("pdf", "PDF export", nonEmptyFile(paths.pdf, 2_000) && fs.readFileSync(paths.pdf!).subarray(0, 4).toString() === "%PDF"));
@@ -218,6 +267,21 @@ export async function runFinalQualityCheck(
   checks.push(item("3d", "3D page turning and touch controls", /perspective:1900px/.test(offlineIndex) && /onpointerdown/.test(offlineIndex) && /ontouch|pointer/.test(offlineIndex)));
   checks.push(item("mobile", "Mobile responsive controls", /@media\(max-width:620px\)/.test(offlineIndex) && /viewport/.test(offlineIndex)));
   checks.push(item("broken-assets", "No empty image containers or broken asset URLs", !/<img[^>]+src=["']["']/.test(`${offlineIndex}\n${epubHtml}`) && !/(?:image-placeholder|empty-image-container)/i.test(`${offlineIndex}\n${epubHtml}`)));
+
+  if (isAchhootResearchTopic(doc.analysis?.topic || doc.settings.topic)) {
+    const expectedAnswers = doc.chapters.reduce((total, chapter) => total + chapter.questions.length, 0);
+    const countAnswers = (value: string) => (value.match(/सीधा उत्तर/g) || []).length;
+    const allTitlesInExports = ACHHOOT_HINDI_TITLES.every(
+      (title) => epubHtml.includes(title) && flipbookData.includes(title) && standalone.includes(title)
+    );
+    checks.push(item("achhoot-export-titles", "All fourteen chapters are present in EPUB and both 3D editions", allTitlesInExports));
+    checks.push(item(
+      "achhoot-export-answers",
+      "All complete review answers are present in EPUB and both 3D editions",
+      countAnswers(epubHtml) >= expectedAnswers && countAnswers(flipbookData) >= expectedAnswers && countAnswers(standalone) >= expectedAnswers,
+      `${expectedAnswers} expected; EPUB ${countAnswers(epubHtml)}, 3D data ${countAnswers(flipbookData)}, standalone ${countAnswers(standalone)}`
+    ));
+  }
 
   const failed = checks.filter((check) => !check.passed);
   const report: QualityReport = {

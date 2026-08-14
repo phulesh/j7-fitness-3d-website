@@ -126,11 +126,12 @@ export function buildBookPages(doc: EbookDocument): BookPage[] {
     const learning = [
       chapter.keyPoints.length ? `${labels.keyPoints}\n\n${chapter.keyPoints.join("\n\n")}` : "",
       chapter.summary ? `${labels.summary}\n\n${strip(chapter.summary)}` : "",
-      // Questions must carry their answers here too: the 3D reader is a way to
-      // read the finished book, not a quiz with the answers withheld.
+      // Keep main's richer Q&A formatting, and print the MCQ answer plus its
+      // explanation: the 3D reader shows the finished book, not a quiz with
+      // the answers withheld.
       chapter.questions.length
         ? `${labels.questions}\n\n${chapter.questions
-            .map((q, n) => `${n + 1}. ${q.question}\n${labels.answers}: ${strip(q.answer)}`)
+            .map((q, n) => `${hindi ? "प्रश्न" : "Question"} ${n + 1}. ${q.question}\n\n${hindi ? "उत्तर" : "Answer"}\n\n${q.answer}${q.explanation ? `\n\n${q.explanation}` : ""}`)
             .join("\n\n")}`
         : "",
       chapter.mcqs.length
@@ -152,6 +153,13 @@ export function buildBookPages(doc: EbookDocument): BookPage[] {
   if (doc.settings.includeGlossary && doc.glossary.length) {
     const glossary = doc.glossary.map((entry) => `${entry.term} — ${entry.definition}${entry.context ? `\n${entry.context}` : ""}`).join("\n\n");
     pages.push(...textPages("glossary", labels.glossary, glossary));
+  }
+
+  if (doc.faqs.length) {
+    const faqs = doc.faqs
+      .map((faq, index) => `${hindi ? "प्रश्न" : "Question"} ${index + 1}. ${faq.question}\n\n${hindi ? "उत्तर" : "Answer"}: ${faq.answer}`)
+      .join("\n\n");
+    pages.push(...textPages("front", labels.faq, faqs));
   }
 
   if (doc.settings.includeReferences && doc.sources.length) {

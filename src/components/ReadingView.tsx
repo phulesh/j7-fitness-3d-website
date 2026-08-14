@@ -91,18 +91,29 @@ export function ReadingView({ doc, initialChapter = 0 }: { doc: EbookDocument; i
             </figure>
           ))}
           {chapter.questions.length > 0 && (
-            <section className="mt-6">
-              <h2 className="font-display text-xl">{labels.questions}</h2>
-              {chapter.questions.map((q, i) => (
-                <div key={i} className="mt-3 text-sm">
-                  <p className="font-medium">
-                    {i + 1}. {q.question}
-                  </p>
-                  <p className="mt-1 text-ink-500">
-                    <span className="font-medium">{labels.answers}:</span> {q.answer}
-                  </p>
-                </div>
-              ))}
+            <section className="chapter-answers mt-8" aria-label={labels.questions}>
+              <div className="mb-4 flex items-center justify-between gap-3 border-b border-paper-400 pb-3">
+                <h2 className="font-display text-xl">{hindi ? "पाठक के प्रश्न और पूरे उत्तर" : `${labels.questions} with answers`}</h2>
+                <span className="rounded-full bg-gold-100 px-2.5 py-1 text-xs font-semibold text-gold-700">
+                  {chapter.questions.length} {hindi ? "उत्तर" : "answers"}
+                </span>
+              </div>
+              <div className="space-y-5">
+                {chapter.questions.map((q, i) => (
+                  <article key={i} className="answer-card rounded-xl border border-paper-400 bg-paper-50/70 p-4 md:p-5">
+                    <h3 className="font-display text-lg leading-snug text-ink-700">
+                      <span className="mr-2 text-burgundy-500">{hindi ? "प्रश्न" : "Question"} {i + 1}.</span>
+                      {q.question}
+                    </h3>
+                    <div className="mt-3 border-l-2 border-gold-300 pl-4 text-[0.98rem] leading-7 text-ink-600">
+                      <p className="mb-2 text-xs font-bold uppercase tracking-[0.12em] text-gold-600">{hindi ? "उत्तर" : "Answer"}</p>
+                      {q.answer.split(/\n{2,}/).filter(Boolean).map((paragraph, paragraphIndex) => (
+                        <p key={paragraphIndex} className="mt-3 first:mt-0">{paragraph}</p>
+                      ))}
+                    </div>
+                  </article>
+                ))}
+              </div>
             </section>
           )}
           {chapter.mcqs.length > 0 && (
