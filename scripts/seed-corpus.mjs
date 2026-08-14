@@ -1,7 +1,9 @@
 import fs from "fs";
 import path from "path";
 
-const dir = path.join(process.cwd(), "data", "corpus");
+// CORPUS_DIR lets the runtime bootstrap seed the corpus onto the persistent
+// volume (/app/data/corpus) on first boot. Defaults to the repo-local copy.
+const dir = process.env.CORPUS_DIR || path.join(process.cwd(), "data", "corpus");
 fs.mkdirSync(dir, { recursive: true });
 
 const now = "2026-08-13";

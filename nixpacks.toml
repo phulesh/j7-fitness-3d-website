@@ -1,6 +1,11 @@
+# NOTE: Railway builds this service with the checked-in Dockerfile (see
+# railway.json "builder": "DOCKERFILE"), so this file is only a reference for
+# local/tooling builds. It intentionally declares NO secrets: API keys
+# (AI_API_KEY, SEARCH_API_KEY, ...) are never listed here and never appear as
+# ARG/ENV in any image; they are read from process.env at server runtime only.
+
 [variables]
 NIXPACKS_NODE_VERSION = "22"
-NODE_ENV = "production"
 
 [phases.install]
 cmds = ["npm ci"]
@@ -9,4 +14,4 @@ cmds = ["npm ci"]
 cmds = ["npm run build"]
 
 [start]
-cmd = "npm start"
+cmd = "node scripts/ensure-runtime-data.mjs && npm start"

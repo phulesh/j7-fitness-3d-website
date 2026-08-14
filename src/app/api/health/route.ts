@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import path from "path";
 import { aiConfigured } from "@/lib/ai";
-import { getDatabase } from "@/lib/db";
+import { dataDir, getDatabase, getDatabasePath } from "@/lib/db";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -9,17 +10,18 @@ export async function GET() {
   try {
     const db = getDatabase();
     db.prepare("SELECT 1").get();
-    const configured = process.env.DATABASE_URL || "";
-    const persistentDatabaseConfigured =
-      configured.startsWith("file:/") && configured !== "file::memory:";
+    const dbPath = getDatabasePath();
+    const root = dataDir();
+    const onVolume = dbPath === root || dbPath.startsWith(root + path.sep);
+    const persistent = path.isAbsolute(dbPath) && onVolume;
     return NextResponse.json(
       {
-        ok: persistentDatabaseConfigured,
-        database: persistentDatabaseConfigured ? "configured" : "not-persistent-production-config",
+        ok: persistent,
+        database: persistent ? "configured" : "not-persistent-production-config",
         ai: aiConfigured() ? "configured" : "not-configured",
       },
       {
-        status: persistentDatabaseConfigured ? 200 : 503,
+        status: persistent ? 200 : 503,
         headers: { "Cache-Control": "no-store" },
       }
     );
