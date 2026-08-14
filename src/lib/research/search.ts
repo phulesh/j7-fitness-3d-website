@@ -12,17 +12,23 @@ export interface RawHit {
 export async function webSearch(query: string, opts: { count?: number } = {}): Promise<RawHit[]> {
   const count = opts.count ?? 8;
   const provider = (process.env.SEARCH_PROVIDER || "auto").toLowerCase();
-  const key = process.env.SEARCH_API_KEY || "";
+  const key = (process.env.SEARCH_API_KEY || "").trim();
 
-  if (key && (provider === "tavily" || (provider === "auto" && !process.env.SEARCH_PROVIDER))) {
+  // SEARCH_API_KEY is a runtime secret. When it is missing, external web
+  // search is gracefully disabled: the research pipeline continues with the
+  // local corpus and keyless scholarly sources (Wikipedia, arXiv, Crossref,
+  // Open Library, PubMed) instead of crashing or scraping the open web.
+  if (!key) return [];
+
+  if (provider === "tavily" || provider === "auto") {
     const t = await tavilySearch(query, count, key);
     if (t.length) return t;
   }
-  if (key && (provider === "brave" || provider === "auto")) {
+  if (provider === "brave" || provider === "auto") {
     const b = await braveSearch(query, count, key);
     if (b.length) return b;
   }
-  if (key && (provider === "serper" || provider === "auto")) {
+  if (provider === "serper" || provider === "auto") {
     const s = await serperSearch(query, count, key);
     if (s.length) return s;
   }

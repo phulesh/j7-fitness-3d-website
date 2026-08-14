@@ -51,22 +51,23 @@ API keys never ship to the browser. `AI_BASE_URL` is the API root (for example, 
 
 ### Railway production configuration
 
-The linked Railway service needs a persistent volume; repository configuration cannot create or attach one on your behalf.
+The linked Railway service needs a persistent volume; repository configuration cannot create or attach one on your behalf. The service builds with the checked-in `Dockerfile` (see `railway.json`, builder `DOCKERFILE`), which declares no `ARG`/`ENV` for secrets — API keys are read from `process.env` at server runtime only and are never baked into the image.
 
 1. Open Railway → project **surprising-miracle** → service **j7-fitness-3d-website**.
 2. Open **Volumes**, create/attach a volume, and set its mount path to **`/app/data`**. Do not initialize or replace an existing volume: attach the existing one first so prior `folio.db` / `folio.json` data can be recovered.
 3. Open the service's **Variables** tab and add:
-   - `DATABASE_URL=file:/app/data/folio.db`
+   - `DATABASE_URL=file:/app/data/folio.db` (recommended). A relative value such as `file:./data/folio.db` also works: in production the app anchors relative `file:` URLs to the volume, so it resolves to `/app/data/folio.db`.
    - `AI_PROVIDER=openai-compatible`
-   - `AI_API_KEY=<the real provider secret>`
+   - `AI_API_KEY=<the real provider secret>` (runtime only — never `NEXT_PUBLIC_*`, never in the Dockerfile)
    - `AI_BASE_URL=https://api.openai.com/v1` (or another vendor's OpenAI-compatible `/v1` API root)
    - `AI_MODEL=<the provider's exact chat model ID>`
+   - `SEARCH_PROVIDER=auto` and optionally `SEARCH_API_KEY=<runtime secret>`. When `SEARCH_API_KEY` is missing, external web search is gracefully disabled and research falls back to the local corpus and keyless scholarly sources.
    - `NEXT_PUBLIC_APP_URL=https://<the Railway public domain>`
-4. Redeploy. `/api/health` returns HTTP 200 only when an absolute persistent database path is configured. It reports only configured/not-configured states, never credentials.
+4. Redeploy. On container start, `node scripts/ensure-runtime-data.mjs` creates the data directories on the volume and seeds the local corpus on first boot (existing volume contents are never overwritten); the database is created lazily by the app on first request. `/api/health` returns HTTP 200 only when the database resolves to an absolute path under the volume mount (`/app/data`). It reports only configured/not-configured states, never credentials.
 5. Run the persistence acceptance test against the public domain from a trusted terminal with a new dedicated test email: `TEST_BASE_URL=https://<domain> TEST_ACCOUNT_EMAIL=<new-test-email> TEST_ACCOUNT_PASSWORD=<strong-test-password> npm run test:persistence`. Keep those values and the printed ebook ID, restart or redeploy the Railway service, then verify that same record with `TEST_BASE_URL=… TEST_ACCOUNT_EMAIL=… TEST_ACCOUNT_PASSWORD=… TEST_EBOOK_ID=… npm run test:persistence:after-restart`. The operator must trigger the restart because Railway credentials are intentionally not stored in this repository. Do not put test credentials in CI logs.
 6. With the four AI secrets present, run `npm run test:ai:real` in Railway's service shell or another trusted server shell with the same variables. The test makes one real provider request and never prints the key or response body.
 
-Production intentionally refuses a missing/relative `DATABASE_URL`; a relative SQLite file can silently disappear on redeploy. Run one replica while using SQLite, because the mounted database is a single-writer application database.
+Run one replica while using SQLite, because the mounted database is a single-writer application database.
 
 ### Existing-data recovery
 
