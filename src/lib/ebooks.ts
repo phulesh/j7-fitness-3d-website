@@ -35,6 +35,8 @@ function normalizeSettings(settings: EbookSettings): EbookSettings {
 }
 
 export function createEbook(userId: string, settings: EbookSettings): EbookDocument {
+  const store = getStore();
+  if (!store.users.some((user) => user.id === userId)) throw new Error("Cannot create an ebook without a persistent owner account");
   const id = nanoid(14);
   const now = nowIso();
   const normalized = normalizeSettings(settings);
@@ -71,7 +73,7 @@ export function createEbook(userId: string, settings: EbookSettings): EbookDocum
     createdAt: now,
     updatedAt: now,
   };
-  getStore().ebooks.push(serialize(doc));
+  store.ebooks.push(serialize(doc));
   persist();
   return doc;
 }

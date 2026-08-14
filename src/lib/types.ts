@@ -592,6 +592,7 @@ export interface UserRecord {
   passwordHash: string;
   isGuest: boolean;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface GenerationJob {

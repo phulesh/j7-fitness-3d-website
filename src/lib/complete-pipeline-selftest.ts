@@ -4,6 +4,7 @@ import JSZip from "jszip";
 import sharp from "sharp";
 import { createEbook, createJob, deleteEbook, getEbook } from "./ebooks";
 import { getStore } from "./db";
+import { ensureSelftestUser } from "./selftest-user";
 import { isRunning, startGeneration } from "./generate/runner";
 import { DEFAULT_SETTINGS } from "./types";
 import { ACHHOOT_HINDI_TITLES } from "./generate/outline";
@@ -26,6 +27,7 @@ async function main() {
   const checks: { name: string; ok: boolean; detail?: string }[] = [];
   const add = (name: string, ok: boolean, detail?: string) => checks.push({ name, ok, detail });
   const userId = "complete-pipeline-selftest";
+  ensureSelftestUser(userId);
   const before = getStore().ebooks.filter((ebook) => ebook.userId !== userId).length;
   const ebook = createEbook(userId, {
     ...DEFAULT_SETTINGS,

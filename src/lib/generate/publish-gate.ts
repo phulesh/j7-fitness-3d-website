@@ -33,7 +33,7 @@ export interface PublishGateResult {
 }
 
 const PLACEHOLDER_RX =
-  /\[insert[^\]]*\]|\bTODO\b|\bTBD\b|lorem ipsum|placeholder text|\[यहाँ|शोध पर निर्भर है|उत्तर स्रोत के प्रकार और लेखक के अनुमान पर निर्भर करता है/i;
+  /\[insert[^\]]*\]|\bTODO\b|\bTBD\b|lorem ipsum|placeholder text|\[यहाँ|शोध पर निर्भर है|उत्तर\s+(?:बाद में दिया जाएगा|स्रोत के प्रकार और लेखक के अनुमान पर निर्भर करता है)/i;
 
 /** Minimum meaningful words per chapter for each requested book length. */
 export function minWordsPerChapter(length: EbookDocument["settings"]["length"]): number {
@@ -103,7 +103,8 @@ export function validateBookForPublishing(doc: EbookDocument): PublishGateResult
     } else if (w < minPerChapter) {
       errors.push(`${label} is too thin: ${w} words < required ${minPerChapter}.`);
     }
-    if (PLACEHOLDER_RX.test(body)) errors.push(`${label} contains placeholder text.`);
+    const assessedContent = `${body} ${ch.questions.map((q) => `${q.question} ${q.answer}`).join(" ")} ${ch.mcqs.map((m) => `${m.question} ${(m.options || []).join(" ")} ${m.answer} ${m.explanation || ""}`).join(" ")}`;
+    if (PLACEHOLDER_RX.test(assessedContent)) errors.push(`${label} contains placeholder or deferred content.`);
 
     // Duplicate-paragraph detection across chapters.
     const sig = body.replace(/\s+/g, " ").slice(0, 240).toLowerCase();
@@ -122,7 +123,11 @@ export function validateBookForPublishing(doc: EbookDocument): PublishGateResult
       }
     } else {
       questions += ch.questions.length;
-      answeredQuestions += ch.questions.filter((q) => validateQuestionAnswer(q.question, q.answer).valid).length;
+      for (const q of ch.questions) {
+        const v = validateQuestionAnswer(q.question, q.answer);
+        if (v.valid) answeredQuestions++;
+        else errors.push(`${label}: stored question “${q.question.slice(0, 70)}…” has an incomplete answer — ${v.reason}`);
+      }
     }
 
     if (doc.settings.includeMcqs) {
@@ -135,7 +140,11 @@ export function validateBookForPublishing(doc: EbookDocument): PublishGateResult
       }
     } else {
       mcqs += ch.mcqs.length;
-      validMcqs += ch.mcqs.filter((m) => validateMcq(m).valid).length;
+      for (const m of ch.mcqs) {
+        const v = validateMcq(m);
+        if (v.valid) validMcqs++;
+        else errors.push(`${label}: stored MCQ is malformed — ${v.reason}`);
+      }
     }
   });
 

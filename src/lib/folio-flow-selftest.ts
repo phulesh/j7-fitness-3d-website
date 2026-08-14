@@ -1,4 +1,5 @@
 import { createEbook, deleteEbook, getEbook, updateEbook, createJob } from "./ebooks";
+import { ensureSelftestUser } from "./selftest-user";
 import { startResearch, isRunning, regenerateOutlineForEbook } from "./generate/runner";
 import { coverSvg, coverAuthor } from "./generate/cover";
 import { DEFAULT_SETTINGS } from "./types";
@@ -26,6 +27,7 @@ async function waitForIdle(ebookId: string, ms = 120000) {
 async function main() {
   const checks: { name: string; ok: boolean; detail?: string }[] = [];
   const userId = "flow-selftest";
+  ensureSelftestUser(userId);
   const ebook = createEbook(userId, {
     ...DEFAULT_SETTINGS,
     topic: TOPIC,
