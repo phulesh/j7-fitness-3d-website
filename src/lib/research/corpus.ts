@@ -1,6 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { tokenize } from "./rank";
+import { matchHaystack, termOccurs } from "./translit";
 import type { RawHit } from "./search";
 
 export interface CorpusDoc {
@@ -42,9 +43,12 @@ export function searchCorpus(query: string, limit = 8): (RawHit & { extract: str
   if (!q.length) return [];
   const scored = docs
     .map((d) => {
-      const hay = `${d.title} ${d.tags?.join(" ") || ""} ${d.extract}`.toLowerCase();
-      const titleHits = tokenize(d.title).filter((t) => q.includes(t)).length;
-      const bodyHits = q.filter((t) => hay.includes(t)).length;
+      // Match across scripts so a Hindi query can still retrieve an English
+      // corpus document about the same subject (and vice versa).
+      const hay = matchHaystack(`${d.title} ${d.tags?.join(" ") || ""} ${d.extract}`);
+      const titleHay = matchHaystack(d.title);
+      const titleHits = q.filter((t) => termOccurs(t, titleHay)).length;
+      const bodyHits = q.filter((t) => termOccurs(t, hay)).length;
       const score = titleHits * 8 + bodyHits;
       return { d, score };
     })

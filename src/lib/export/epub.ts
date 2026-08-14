@@ -155,7 +155,9 @@ export async function exportEpub(doc: EbookDocument, destPath: string): Promise<
               (q, n) =>
                 `<p><strong>${n + 1}.</strong> ${esc(q.question)}</p><ul>${(q.options || [])
                   .map((o, j) => `<li>${String.fromCharCode(65 + j)}. ${esc(o)}</li>`)
-                  .join("")}</ul><p class="answer">${esc(labels.answers)}: ${esc(q.answer)}</p>`
+                  .join("")}</ul><p class="answer">${esc(labels.answers)}: ${esc(q.answer)}</p>${
+                  q.explanation ? `<p class="answer">${esc(labels.explanation)}: ${esc(q.explanation)}</p>` : ""
+                }`
             )
             .join("")}`
         : "",

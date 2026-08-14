@@ -221,11 +221,17 @@ export function scoreSource(input: {
 }
 
 export function tokenize(s: string): string[] {
-  return s
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .split(/\s+/)
-    .filter((w) => w.length > 2 && !STOP.has(w));
+  return (
+    s
+      .toLowerCase()
+      // \p{M} must be kept: Devanagari and most non-Latin scripts write vowels
+      // as combining marks, and dropping them destroys every word.
+      .replace(/[^\p{L}\p{M}\p{N}\s]/gu, " ")
+      .split(/\s+/)
+      // Non-Latin words are meaningful at 2 characters; a >2 filter silently
+      // discarded valid Devanagari tokens.
+      .filter((w) => (/[^\u0000-\u024F]/.test(w) ? w.length >= 2 : w.length > 2) && !STOP.has(w))
+  );
 }
 
 const STOP = new Set([

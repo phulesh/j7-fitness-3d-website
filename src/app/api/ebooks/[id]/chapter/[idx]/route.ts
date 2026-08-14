@@ -36,6 +36,36 @@ export async function POST(req: Request, { params }: { params: { id: string; idx
     return json({ chapter: ch });
   }
 
+  // Targeted Q&A regeneration. These rebuild ONLY the requested part of a
+  // single chapter, leaving its prose, images and every other chapter intact.
+  if (action === "regenerate-questions" || action === "regenerate-answers" || action === "regenerate-mcqs") {
+    const chapter = ebook.chapters[idx];
+    if (!chapter) return bad("Chapter not generated yet");
+    const { buildQuestions, buildMcqs, isCompleteAnswer } = await import("@/lib/generate/qa");
+    const lang = ebook.outputLanguage || ebook.language;
+    const item = ebook.outline[idx];
+
+    if (action === "regenerate-questions") {
+      chapter.questions = buildQuestions({ chapter, item, sources: ebook.sources, lang });
+    } else if (action === "regenerate-mcqs") {
+      chapter.mcqs = buildMcqs({ chapter, sources: ebook.sources, lang });
+    } else {
+      // Answers only: keep every good answer, replace just the incomplete ones.
+      const fresh = buildQuestions({ chapter, item, sources: ebook.sources, lang });
+      chapter.questions = chapter.questions.map((q) => {
+        if (isCompleteAnswer(q.answer)) return q;
+        const replacement = fresh.find((f) => f.question === q.question) || fresh.shift();
+        return replacement ? { ...q, answer: replacement.answer, sourceIds: replacement.sourceIds } : q;
+      });
+    }
+
+    const chapters = ebook.chapters.slice();
+    chapters[idx] = chapter;
+    saveChapters(ebook.id, chapters);
+    updateEbook(ebook.id, { chapters });
+    return json({ chapter, ebookId: ebook.id });
+  }
+
   if (
     action === "add-image" ||
     action === "replace-image" ||

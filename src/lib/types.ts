@@ -552,6 +552,8 @@ export interface EbookDocument {
     detail?: string;
   };
   qualityReport?: QualityReport;
+  /** Content-completeness report; a book is only Ready when this passes. */
+  validation?: import("./generate/validate").ValidationReport;
   exports?: EbookExports;
   progress: {
     step: string;
@@ -627,6 +629,54 @@ export const DEFAULT_SETTINGS: EbookSettings = {
   researchQuestions: [],
 };
 
+/**
+ * Pipeline states surfaced to the user (spec §14). These are reported as-is so
+ * an outline-only book is never presented as a finished one.
+ */
+export type GenerationStage =
+  | "CREATING"
+  | "RESEARCHING"
+  | "SOURCES_READY"
+  | "OUTLINE_READY"
+  | "GENERATING_CHAPTERS"
+  | "GENERATING_QA"
+  | "GENERATING_IMAGES"
+  | "VALIDATING"
+  | "READY"
+  | "ERROR";
+
+export function generationStage(doc: {
+  status: EbookDocument["status"];
+  sources?: unknown[];
+  outline?: unknown[];
+  chapters?: unknown[];
+  progress?: { step?: string };
+}): GenerationStage {
+  switch (doc.status) {
+    case "draft":
+    case "paused":
+      return "CREATING";
+    case "analyzing":
+    case "researching":
+      return (doc.sources?.length || 0) > 0 ? "SOURCES_READY" : "RESEARCHING";
+    case "outlining":
+    case "awaiting_outline":
+      return "OUTLINE_READY";
+    case "writing":
+      return "GENERATING_CHAPTERS";
+    case "fact_checking":
+      return "GENERATING_QA";
+    case "exporting":
+      return doc.progress?.step === "validating" ? "VALIDATING" : "GENERATING_IMAGES";
+    case "complete":
+      return "READY";
+    case "failed":
+      return "ERROR";
+    default:
+      return "CREATING";
+  }
+}
+
 export function displayStatus(status: EbookDocument["status"]): string {
   switch (status) {
     case "draft":
@@ -637,7 +687,9 @@ export function displayStatus(status: EbookDocument["status"]): string {
       return "Researching";
     case "outlining":
     case "awaiting_outline":
-      return "Outline Ready";
+      // An outline is not a book. Calling this "Outline Ready" invited the
+      // "Outline Ready · 0 words" state the spec calls out.
+      return "Outline only — not written yet";
     case "writing":
     case "fact_checking":
     case "exporting":
@@ -645,7 +697,7 @@ export function displayStatus(status: EbookDocument["status"]): string {
     case "complete":
       return "Completed";
     case "failed":
-      return "Failed";
+      return "Needs attention";
     default:
       return status;
   }

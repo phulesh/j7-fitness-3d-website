@@ -1,6 +1,7 @@
 import { nanoid } from "nanoid";
 import { isHindiOutput } from "../language";
 import { isAmbedkarUntouchablesTopic, type TopicProfile } from "../research/relevance";
+import { buildTopicalPlan } from "./outline-topical";
 import type {
   EbookSettings,
   ExtractedFact,
@@ -824,8 +825,9 @@ export function plannedChaptersForTopic(opts: {
   settings: EbookSettings;
   analysis: TopicAnalysis;
   requestedCount: number;
+  sources?: SourceRecord[];
 }): PlannedChapter[] {
-  const { topic, settings, analysis, requestedCount } = opts;
+  const { topic, settings, analysis, requestedCount, sources = [] } = opts;
   const hindi = isHindiOutput(analysis.outputLanguage || settings.outputLanguage || settings.language);
   const n = Math.max(4, Math.min(20, requestedCount || 10));
 
@@ -838,12 +840,12 @@ export function plannedChaptersForTopic(opts: {
   const strategy = STRATEGIES.find((s) => s.match(topic) || s.match(`${topic} ${settings.type}`));
   if (strategy) return hindi ? strategy.hindi(topic, n) : strategy.english(topic, n);
 
-  const historical =
-    analysis.category === "historical" ||
-    settings.type === "History Book" ||
-    settings.type === "Research-Based Book" ||
-    /इतिहास|history|historical/i.test(`${topic} ${settings.type}`);
-  if (historical) return genericHistoricalPlan(topic, n, hindi, analysis);
+  // Every remaining topic gets a discipline-appropriate, source-derived plan.
+  // The old behaviour dropped generic topics into a single "historical"
+  // template and padded any shortfall with "<topic>: अतिरिक्त शोध-पक्ष 12",
+  // which is precisely the generic output this rebuild removes.
+  const topical = buildTopicalPlan({ topic, analysis, settings, sources, count: n });
+  if (topical.length) return topical;
 
   return [];
 }

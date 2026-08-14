@@ -9,6 +9,7 @@ import { OutlineEditor } from "./OutlineEditor";
 import { ReadingView } from "./ReadingView";
 import { AutosaveIndicator } from "./AutosaveIndicator";
 import { ErrorBanner } from "./ErrorBanner";
+import { ValidationPanel } from "./ValidationPanel";
 import { api } from "@/lib/client";
 import { useEbook } from "@/hooks/useEbook";
 import { displayStatus, type EbookDocument, type EbookSettings, type FactFlag, type OutlineItem } from "@/lib/types";
@@ -887,6 +888,7 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
           ) : (
             <div className="paper-card rounded-2xl p-6 text-center text-sm text-ink-400">Your interactive book will open here automatically after the final quality check.</div>
           )}
+          <ValidationPanel doc={doc} ebookId={ebookId} onFixed={() => load().catch(() => {})} />
           {doc.qualityReport && (
             <details className="paper-card mt-5 rounded-2xl p-5">
               <summary className="cursor-pointer font-semibold">✓ Final quality report · {doc.qualityReport.items.filter((item) => item.passed).length}/{doc.qualityReport.items.length} checks passed</summary>

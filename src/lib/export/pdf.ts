@@ -399,6 +399,8 @@ function writeChapter(
         pdf.text(`    ${String.fromCharCode(65 + j)}. ${opt}`);
       });
       pdf.font(BODY).fontSize(10).fillColor("#5C4B3C").text(`   ${labels.answers}: ${q.answer}`);
+      // An MCQ answer is never shown without the reasoning behind it.
+      if (q.explanation) pdf.font(BODY).fontSize(10).fillColor("#5C4B3C").text(`   ${labels.explanation}: ${q.explanation}`);
       pdf.fillColor("#1C1410");
       pdf.moveDown(0.35);
     });

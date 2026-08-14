@@ -126,12 +126,24 @@ export function buildBookPages(doc: EbookDocument): BookPage[] {
     const learning = [
       chapter.keyPoints.length ? `${labels.keyPoints}\n\n${chapter.keyPoints.join("\n\n")}` : "",
       chapter.summary ? `${labels.summary}\n\n${strip(chapter.summary)}` : "",
+      // Keep main's richer Q&A formatting, and print the MCQ answer plus its
+      // explanation: the 3D reader shows the finished book, not a quiz with
+      // the answers withheld.
       chapter.questions.length
         ? `${labels.questions}\n\n${chapter.questions
             .map((q, n) => `${hindi ? "प्रश्न" : "Question"} ${n + 1}. ${q.question}\n\n${hindi ? "उत्तर" : "Answer"}\n\n${q.answer}${q.explanation ? `\n\n${q.explanation}` : ""}`)
             .join("\n\n")}`
         : "",
-      chapter.mcqs.length ? `${labels.mcqs}\n\n${chapter.mcqs.map((q, n) => `${n + 1}. ${q.question}\n${(q.options || []).join(" · ")}`).join("\n\n")}` : "",
+      chapter.mcqs.length
+        ? `${labels.mcqs}\n\n${chapter.mcqs
+            .map(
+              (q, n) =>
+                `${n + 1}. ${q.question}\n${(q.options || []).join(" · ")}\n${labels.answers}: ${q.answer}${
+                  q.explanation ? `\n${labels.explanation}: ${strip(q.explanation)}` : ""
+                }`
+            )
+            .join("\n\n")}`
+        : "",
     ].filter(Boolean).join("\n\n");
     if (learning) pages.push(...textPages("chapter", hindi ? "अध्याय समीक्षा" : "Chapter Review", learning, i));
   }

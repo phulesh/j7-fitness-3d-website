@@ -18,6 +18,14 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
     return bad("Generate the ebook before downloading.");
   }
 
+  // Never hand the user a partial book. Validation is the same gate the
+  // generator uses, so what is downloadable is exactly what is complete.
+  const { validateEbook, describeValidation } = await import("@/lib/generate/validate");
+  const validation = validateEbook(ebook);
+  if (!validation.ok) {
+    return bad(describeValidation(validation), 409);
+  }
+
   const url = new URL(req.url);
   const format = (url.searchParams.get("format") || "pdf").toLowerCase();
   if (!["pdf", "docx", "epub", "3d", "html"].includes(format)) return bad("Format must be pdf, docx, epub, 3d, or html.");
@@ -72,6 +80,11 @@ export async function GET(req: Request, { params }: { params: { id: string } }) 
   } catch (err) {
     console.error("export failed", err);
     return bad("Export service temporarily unavailable. Your ebook data has been saved. Please retry.", 503);
+  }
+
+  // Verify the artefact really was produced before offering it as a download.
+  if (!fs.existsSync(dest) || fs.statSync(dest).size < 500) {
+    return bad("The generated file was empty. Please retry the export.", 500);
   }
 
   recordDownload(ebook.id, auth.user.id, format, dest);

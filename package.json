@@ -13,7 +13,8 @@
     "test:flow": "npx --yes tsx src/lib/folio-flow-selftest.ts",
     "test:3d": "npx --yes tsx src/lib/flipbook-selftest.ts",
     "test:complete": "tsx src/lib/complete-pipeline-selftest.ts",
-    "postinstall": "node scripts/ensure-dirs.js && node scripts/seed-corpus.mjs"
+    "postinstall": "node scripts/ensure-dirs.js && node scripts/seed-corpus.mjs",
+    "test:rebuild": "tsx src/lib/rebuild-acceptance-selftest.ts"
   },
   "dependencies": {
     "@react-three/drei": "^9.120.4",

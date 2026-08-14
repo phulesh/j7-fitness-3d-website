@@ -1,5 +1,6 @@
 import { sourceTier } from "./rank";
 import { domainOf } from "../http";
+import { matchHaystack, termOccurs, transliterateDevanagari, hasDevanagari } from "./translit";
 import type { ClaimKind, RejectedSource, ResearchQualityReport, SourceRecord } from "../types";
 
 export const MIN_RELEVANCE = 70;
@@ -108,6 +109,65 @@ const QUERY_STOP = new Set([
   "dr",
 ]);
 
+/**
+ * Devanagari function words. Without these, generic connectives like "और" or
+ * "क्या" become "core terms" and every unrelated Hindi page scores as relevant.
+ */
+const HINDI_STOP = new Set([
+  "और",
+  "या",
+  "का",
+  "के",
+  "की",
+  "को",
+  "में",
+  "से",
+  "पर",
+  "है",
+  "हैं",
+  "था",
+  "थे",
+  "थी",
+  "हो",
+  "होता",
+  "होती",
+  "होने",
+  "कि",
+  "यह",
+  "वह",
+  "इस",
+  "उस",
+  "ये",
+  "वे",
+  "एक",
+  "क्या",
+  "क्यों",
+  "कैसे",
+  "कौन",
+  "कब",
+  "कहाँ",
+  "लिए",
+  "साथ",
+  "तथा",
+  "एवं",
+  "भी",
+  "ही",
+  "तो",
+  "नहीं",
+  "अपने",
+  "अपनी",
+  "उनके",
+  "उनकी",
+  "जो",
+  "जब",
+  "तक",
+  "बाद",
+  "पुस्तक",
+  "अध्याय",
+  "परिचय",
+  "विषय",
+]);
+
 const PHYSICS_MARKERS =
   /\b(gravitational waves?|ligo|virgo detector|pulsar timing|black[- ]hole merger|higgs boson|large hadron|quark|gluon|neutrino oscillation|dark matter particle|quantum chromodynamics|spacetime metric|interferometer|detector (noise|performance|sensitivity)|wave-?form template|general relativity|particle physics|collider|quantum field theory|lattice qcd|supersymmetry|axion|graviton)\b/i;
 
@@ -127,19 +187,32 @@ const BLOCKED_WORK_INQUIRY_CHAPTERS =
   /^(religion|communism|indo-?aryan migrations?|in popular culture|works|terminology|official term|early life|personal life|death|family|electoral history|awards|filmography|discography|complete works)$/i;
 
 export function normalizeText(s: string): string {
+  // \p{M} (combining marks) must be preserved. Devanagari, Tamil, Arabic and
+  // most non-Latin scripts encode vowels as combining marks, so stripping them
+  // shreds every word into meaningless consonant fragments
+  // ("वेदांत" -> "व द त") and makes topical relevance impossible to score.
   return (s || "")
     .toLowerCase()
     .replace(/[“”]/g, '"')
     .replace(/[—–]/g, "-")
-    .replace(/[^ \p{L}\p{N}'-]+/gu, " ")
+    .replace(/[^ \p{L}\p{M}\p{N}'-]+/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+/**
+ * True when a script writes words without needing Latin-style length. Used to
+ * keep short-but-meaningful Devanagari/CJK tokens that a length>2 filter would
+ * otherwise discard.
+ */
+function isNonLatinWord(word: string): boolean {
+  return /[^\u0000-\u024F]/.test(word);
 }
 
 export function distinctiveTerms(text: string): string[] {
   const raw = normalizeText(text)
     .split(" ")
-    .filter((w) => w.length > 2 && !QUERY_STOP.has(w));
+    .filter((w) => (isNonLatinWord(w) ? w.length >= 2 : w.length > 2) && !QUERY_STOP.has(w) && !HINDI_STOP.has(w));
   const out: string[] = [];
   const seen = new Set<string>();
   for (const w of raw) {
@@ -397,19 +470,40 @@ function ambedkarUntouchablesProfile(topic: string): TopicProfile {
 
 function genericProfile(topic: string, category: TopicKind, type: string): TopicProfile {
   const parsed = parseNamedWork(topic);
+  // A colon in a title is almost always an ordinary subtitle
+  // ("वेदांत दर्शन: इतिहास, विकास और प्रमुख आचार्य"), not an inquiry into a
+  // specific named work. Treating every subtitle as a named-work inquiry
+  // applied a much harsher relevance gate to normal topics and starved them of
+  // sources, so require a real author or an actual interrogative.
+  const interrogative = Boolean(
+    parsed.question && /\?|\bwho\b|\bwhy\b|\bhow\b|\bwhat\b|कौन|क्यों|कैसे|क्या/i.test(parsed.question)
+  );
   const namedWork = Boolean(
     parsed.workTitle &&
-      (parsed.author || parsed.question) &&
+      (parsed.author || interrogative) &&
       !["biography", "scientific", "programming", "technical", "medical"].includes(category)
   );
   const kind: TopicKind = namedWork ? "named-work-inquiry" : category;
-  const core = distinctiveTerms(`${parsed.workTitle || topic} ${parsed.author || ""}`);
+  // Core terms must come from the WHOLE topic. Using only the pre-colon
+  // fragment threw away the subtitle's distinctive terms (इतिहास, विकास,
+  // आचार्य), which are exactly what identifies an on-topic source.
+  const core = distinctiveTerms(`${topic} ${parsed.author || ""}`);
   const allowStem = ["scientific", "technical", "programming", "medical"].includes(kind);
   const queries = [
     parsed.workTitle && parsed.author ? `"${parsed.workTitle}" ${parsed.author}` : topic,
     parsed.question ? `${parsed.workTitle || topic} ${parsed.question}` : `${topic} overview`,
     parsed.author && !namedWork ? `${parsed.author} ${parsed.workTitle || topic}` : `${topic} primary sources`,
   ].filter(Boolean) as string[];
+
+  // Most scholarship for Indic topics is indexed in English. Without a
+  // romanised query a Hindi topic can only ever find Hindi pages, which is why
+  // research came back nearly empty.
+  if (hasDevanagari(topic)) {
+    const roman = transliterateDevanagari(parsed.workTitle || topic).replace(/\s+/g, " ").trim();
+    if (roman.length >= 3) {
+      queries.push(roman, `${roman} history`, `${roman} philosophy scholarship`);
+    }
+  }
 
   return {
     topic,
@@ -479,18 +573,18 @@ export function looksLikeEntertainmentHomonym(candidate: SourceCandidate, profil
 }
 
 function mentionsCore(text: string, profile: TopicProfile, min: number): boolean {
-  const n = normalizeText(text);
-  let hits = 0;
-  for (const term of profile.coreTerms) {
-    if (n.includes(normalizeText(term))) hits++;
-    if (hits >= min) return true;
-  }
-  return false;
+  return termHits(text, profile.coreTerms).length >= min;
 }
 
+/**
+ * Script-aware term matching. A Hindi topic must be able to match English
+ * scholarship (and vice versa), and Devanagari spelling variants must not
+ * cause misses, so matching runs over transliterated + folded forms.
+ */
 function termHits(text: string, terms: string[]): string[] {
-  const n = normalizeText(text);
-  return terms.filter((t) => n.includes(normalizeText(t)));
+  if (!terms.length) return [];
+  const hay = matchHaystack(text);
+  return terms.filter((t) => termOccurs(t, hay));
 }
 
 export function isPreferredDomain(url: string, profile: TopicProfile): boolean {
@@ -594,14 +688,25 @@ export function evaluateCandidate(
   const questionHits = inspected.length >= 40 ? distinctiveTerms(questionBlob).filter((t) => inspectedN.includes(t) && t.length > 4).length : 0;
   const outlineHits = inspected.length >= 40 ? distinctiveTerms(outlineBlob).filter((t) => inspectedN.includes(t) && t.length > 4).length : 0;
 
+  const fullHay = matchHaystack(full);
   let relevance = 0;
-  if (profile.workTitle && normalizeText(full).includes(normalizeText(profile.workTitle))) relevance += inspected.length >= 40 ? 22 : 8;
+  if (profile.workTitle && termOccurs(profile.workTitle, fullHay)) relevance += inspected.length >= 40 ? 22 : 8;
   if (profile.author) {
     const authorLast = normalizeText(profile.author).split(" ").pop() || "";
-    if (authorLast && normalizeText(full).includes(authorLast)) relevance += inspected.length >= 40 ? 16 : 6;
+    if (authorLast && termOccurs(authorLast, fullHay)) relevance += inspected.length >= 40 ? 16 : 6;
   }
   relevance += Math.min(36, contentHits.length * 7);
   relevance += Math.min(12, titleHits.length * 3);
+  // Absolute hit counts alone under-score a source that covers the topic
+  // *comprehensively*: a page discussing every one of a topic's distinctive
+  // terms is far stronger evidence than one mentioning a couple, but a raw
+  // count saturates identically for both. Reward proportional coverage.
+  if (profile.coreTerms.length >= 2 && inspected.length >= 40) {
+    const coverage = contentHits.length / profile.coreTerms.length;
+    if (coverage >= 0.8) relevance += 24;
+    else if (coverage >= 0.6) relevance += 16;
+    else if (coverage >= 0.4) relevance += 8;
+  }
   // A title that matches the requested topic (exactly, or as a full phrase) is
   // strong evidence of relevance when the inspected content also confirms the
   // core terms. Without this, short topics whose profile has only one or two
@@ -615,6 +720,13 @@ export function evaluateCandidate(
       (titleNorm.split(" ").length >= 2 && topicNorm.includes(titleNorm)) ||
       (topicNorm.split(" ").length >= 2 && titleNorm.includes(topicNorm)));
   if (titleIsTopic && contentHits.length >= 1) relevance += 30;
+  // A title carrying most of the topic's distinctive terms is strong evidence
+  // even across scripts, where exact string containment can never hold
+  // (a Hindi topic vs. an English encyclopedia title).
+  if (!titleIsTopic && profile.coreTerms.length) {
+    const ratio = titleHits.length / Math.min(4, profile.coreTerms.length);
+    if (ratio >= 0.5 && contentHits.length >= 1) relevance += 26;
+  }
   relevance += Math.min(12, Math.floor(questionHits / 2) * 3);
   relevance += Math.min(8, Math.floor(outlineHits / 2) * 2);
   if (primary && contentHits.length >= 1) relevance += 8;

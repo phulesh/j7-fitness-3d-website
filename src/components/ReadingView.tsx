@@ -129,6 +129,14 @@ export function ReadingView({ doc, initialChapter = 0 }: { doc: EbookDocument; i
                       <li key={o}>{o}</li>
                     ))}
                   </ul>
+                  <p className="mt-1 text-ink-500">
+                    <span className="font-medium">{labels.answers}:</span> {q.answer}
+                  </p>
+                  {q.explanation && (
+                    <p className="text-ink-500">
+                      <span className="font-medium">{labels.explanation}:</span> {q.explanation}
+                    </p>
+                  )}
                 </div>
               ))}
             </section>
