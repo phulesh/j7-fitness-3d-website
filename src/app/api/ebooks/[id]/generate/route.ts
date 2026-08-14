@@ -1,6 +1,7 @@
 import { createJob, getActiveJob, getEbook, getLatestJob } from "@/lib/ebooks";
 import { continueFromOutline, isRunning, startGeneration } from "@/lib/generate/runner";
 import { requireUser, json, bad, limit } from "@/lib/api";
+import { aiConfigured } from "@/lib/ai";
 
 export async function POST(req: Request, { params }: { params: { id: string } }) {
   const auth = await requireUser(req);
@@ -9,6 +10,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   if (blocked) return blocked;
   const ebook = getEbook(params.id, auth.user.id);
   if (!ebook) return bad("Ebook not found", 404);
+  if (!aiConfigured()) {
+    return bad("AI generation is not configured. An administrator must set AI_PROVIDER, AI_API_KEY, AI_BASE_URL, and AI_MODEL on the server.", 503);
+  }
 
   let body: { resume?: boolean; fromOutline?: boolean } = {};
   try {

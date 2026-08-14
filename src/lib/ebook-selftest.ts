@@ -1,4 +1,5 @@
 import { createEbook, deleteEbook, findRecentDuplicateDraft, listEbooks, updateEbook, getEbook } from "./ebooks";
+import { ensureSelftestUser } from "./selftest-user";
 import { isAcceptableHindi, normalizeOutputLanguage, resolveOutputLanguage } from "./language";
 import { composeHindiChapter } from "./generate/hindi";
 import { coverSvg } from "./generate/cover";
@@ -239,6 +240,7 @@ export function runUpgradeSelftest() {
   checks.push({ name: "Figures insert into chapter HTML", ok: chapter.sections.some((s) => /ebook-figure/.test(s.html)) });
 
   const userId = "selftest-user";
+  ensureSelftestUser(userId);
   const first = createEbook(userId, { ...DEFAULT_SETTINGS, topic: "Selftest Unique Topic XYZ", language: "hi" });
   const dup = findRecentDuplicateDraft(userId, "Selftest Unique Topic XYZ");
   checks.push({ name: "Recent draft reuse", ok: Boolean(dup && dup.id === first.id), detail: first.ebookId });

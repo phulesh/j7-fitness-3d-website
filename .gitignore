@@ -9,6 +9,8 @@ dist
 .env.*.local
 data/*.db
 data/*.db-journal
+data/*.db-shm
+data/*.db-wal
 data/folio.json
 data/folio.json.tmp
 data/uploads/**

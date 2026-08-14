@@ -17,8 +17,9 @@ Unrelated hits (generic biography dumps, entertainment homonyms, off-topic arXiv
 ## Stack
 
 - Next.js 14 (App Router) + TypeScript + Tailwind + Three.js 3D reader
-- JSON document store (`data/folio.json`) for users, ebooks, chapters, sources, jobs, downloads
-- httpOnly JWT sessions, bcrypt passwords, guest mode
+- SQLite database (`DATABASE_URL`) with normalized users, server sessions, and owned ebook records
+- Opaque revocable httpOnly sessions, bcrypt cost-12 passwords, guest mode
+- Node.js 22+ (uses the built-in `node:sqlite` driver)
 - Research: Wikipedia / Wikibooks, DuckDuckGo, Crossref, arXiv, Open Library, PubMed, Wikimedia Commons
 - Optional: `AI_API_KEY` (OpenAI-compatible or Anthropic) and `SEARCH_API_KEY` (Tavily / Brave / Serper)
 - Exports: PDFKit + Go Noto fonts, `docx`, EPUB 3 via JSZip
@@ -28,7 +29,7 @@ Unrelated hits (generic biography dumps, entertainment homonyms, off-topic arXiv
 ```bash
 npm install
 bash scripts/download-fonts.sh
-cp .env.example .env   # set AUTH_SECRET
+cp .env.example .env   # set the server-only database and AI environment variables
 npm run dev
 ```
 
@@ -38,17 +39,17 @@ Open [http://localhost:3000](http://localhost:3000).
 
 | Variable | Purpose |
 | --- | --- |
-| `AUTH_SECRET` | Signs session cookies (required in production) |
-| `AI_API_KEY` | Optional LLM for higher-quality prose from research notes |
-| `AI_API_BASE` / `AI_MODEL` | OpenAI-compatible endpoint |
+| `DATABASE_URL` | SQLite `file:` URL on persistent production storage |
+| `AI_PROVIDER` | `openai-compatible`, `openai`, or `anthropic` |
+| `AI_API_KEY` | Server-only provider credential; generation is blocked when absent |
+| `AI_BASE_URL` / `AI_MODEL` | Configurable provider endpoint and model |
 | `SEARCH_API_KEY` / `SEARCH_PROVIDER` | Optional Tavily, Brave, or Serper |
-| `DATABASE_URL` | SQLite path (`file:./data/folio.db`) |
 | `MAX_UPLOAD_MB` | Syllabus upload limit |
 | `RATE_LIMIT_PER_HOUR` | Generation cap per user/IP |
 
 API keys never ship to the browser.
 
-Without paid keys, Folio still researches via Wikipedia, scholarly APIs, library catalogs, DuckDuckGo, and GitHub. Retrieved encyclopaedia extracts (CC BY-SA) are kept in `data/corpus` so generation still works on hosts that cannot reach Wikipedia. The reference list is always the set of URLs actually collected for that title.
+Public research connectors can still collect evidence without a paid search key. Ebook generation, however, requires the server-side AI configuration and returns a visible 503 configuration error rather than publishing fallback or empty content. Retrieved encyclopaedia extracts (CC BY-SA) are kept in `data/corpus`; the reference list is always the set of URLs actually collected for that title.
 
 ## Product notes
 

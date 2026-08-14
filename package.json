@@ -14,6 +14,8 @@
     "test:3d": "npx --yes tsx src/lib/flipbook-selftest.ts",
     "test:complete": "tsx src/lib/complete-pipeline-selftest.ts",
     "test:qa": "npx --yes tsx src/lib/qa-selftest.ts",
+    "test:ai": "npx --yes tsx src/lib/ai-selftest.ts",
+    "test:persistence": "node scripts/persistence-e2e.mjs",
     "test:vedanta": "npx --yes tsx src/lib/vedanta-pipeline-selftest.ts",
     "postinstall": "node scripts/ensure-dirs.js && node scripts/seed-corpus.mjs"
   },
@@ -36,7 +38,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "sanitize-html": "^2.13.1",
-    "sharp": "^0.33.5",
+    "sharp": "^0.35.3",
     "three": "^0.170.0",
     "zod": "^3.24.1"
   },

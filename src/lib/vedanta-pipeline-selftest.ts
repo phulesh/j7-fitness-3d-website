@@ -2,6 +2,7 @@
 import fs from "fs";
 import JSZip from "jszip";
 import { createEbook, createJob, deleteEbook, getEbook } from "./ebooks";
+import { ensureSelftestUser } from "./selftest-user";
 import { isRunning, startGeneration } from "./generate/runner";
 import { DEFAULT_SETTINGS } from "./types";
 import { buildBookPages } from "./book/pages";
@@ -24,6 +25,7 @@ async function main() {
   const checks: { name: string; ok: boolean; detail?: string }[] = [];
   const add = (name: string, ok: boolean, detail?: string) => { checks.push({ name, ok, detail }); console.log(ok ? "✓" : "✗", name, detail || ""); };
 
+  ensureSelftestUser("vedanta-e2e");
   const ebook = createEbook("vedanta-e2e", {
     ...DEFAULT_SETTINGS,
     topic: TOPIC, title: TOPIC, customTitle: TOPIC,
