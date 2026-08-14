@@ -29,6 +29,14 @@ import {
   localizeTitle,
 } from "./hindi";
 import { figuresToHtml } from "./images";
+import {
+  buildMcqs,
+  buildQuestions,
+  isCompleteAnswer,
+  isPlaceholderText,
+  MAX_MCQS_PER_CHAPTER,
+  MAX_QUESTIONS_PER_CHAPTER,
+} from "./qa";
 
 export { chapterPlain, countWords, escapeHtml, labelsFor } from "./text";
 
@@ -117,36 +125,98 @@ export async function writeChapter(opts: {
   const { index, item, settings, analysis, bundle, total } = opts;
   const { notes, sourceIds, images } = notesForChapter(item, bundle, settings);
   const hindi = isHindiOutput(analysis.outputLanguage || settings.outputLanguage || settings.language);
+  const lang = analysis.outputLanguage || settings.outputLanguage || settings.language || "en";
+
+  let chapter: Chapter | null = null;
 
   if (aiConfigured()) {
     const ai = await writeChapterWithAi({ index, item, settings, analysis, notes, sourceIds, total, images });
     if (ai) {
-      if (hindi) {
-        const ensured = await ensureHindiChapter(ai, {
+      chapter = hindi
+        ? (
+            await ensureHindiChapter(ai, {
+              item,
+              settings,
+              analysis,
+              sources: bundle.sources,
+              facts: bundle.facts || [],
+            })
+          ).chapter
+        : ai;
+    }
+  }
+
+  if (!chapter) {
+    chapter = hindi
+      ? composeHindiChapter({
+          index,
           item,
           settings,
           analysis,
           sources: bundle.sources,
           facts: bundle.facts || [],
-        });
-        return ensured.chapter;
-      }
-      return ai;
-    }
+          images,
+        })
+      : writeChapterFromSources({ index, item, settings, analysis, bundle, notes, sourceIds, images });
   }
 
-  if (hindi) {
-    return composeHindiChapter({
-      index,
-      item,
-      settings,
-      analysis,
-      sources: bundle.sources,
-      facts: bundle.facts || [],
-      images,
-    });
+  // Q&A is enforced centrally so every writer (AI, Hindi composer, and the
+  // deterministic source writer) is held to the same contract: 8-15 questions
+  // that each carry a complete answer, and 5-10 explained MCQs. Incomplete or
+  // placeholder items produced upstream are replaced rather than shipped.
+  return enforceChapterQa(chapter, { item, settings, sources: bundle.sources, lang });
+}
+
+/**
+ * Guarantee the Q&A contract for a chapter. Existing good questions are kept;
+ * placeholder or unanswered ones are dropped and the shortfall regenerated
+ * from the chapter's own content.
+ */
+export function enforceChapterQa(
+  chapter: Chapter,
+  opts: { item: OutlineItem; settings: EbookSettings; sources: SourceRecord[]; lang: string }
+): Chapter {
+  const { item, settings, sources, lang } = opts;
+
+  if (settings.includeExercises) {
+    const kept = (chapter.questions || []).filter(
+      (q) => q.question?.trim() && isCompleteAnswer(q.answer) && !isPlaceholderText(q.question)
+    );
+    const generated = buildQuestions({ chapter, item, sources, lang });
+    const merged: QuizItem[] = [...kept];
+    for (const q of generated) {
+      if (merged.length >= MAX_QUESTIONS_PER_CHAPTER) break;
+      if (!merged.some((x) => x.question === q.question)) merged.push(q);
+    }
+    chapter.questions = merged.slice(0, MAX_QUESTIONS_PER_CHAPTER);
+  } else {
+    chapter.questions = [];
   }
-  return writeChapterFromSources({ index, item, settings, analysis, bundle, notes, sourceIds, images });
+
+  if (settings.includeMcqs) {
+    const kept = (chapter.mcqs || []).filter(
+      (m) =>
+        m.question?.trim() &&
+        Array.isArray(m.options) &&
+        m.options.length === 4 &&
+        m.answer?.trim() &&
+        m.options.includes(m.answer) &&
+        Boolean(m.explanation?.trim()) &&
+        !isPlaceholderText(m.explanation || "")
+    );
+    const generated = buildMcqs({ chapter, sources, lang });
+    const merged: QuizItem[] = [...kept];
+    for (const m of generated) {
+      if (merged.length >= MAX_MCQS_PER_CHAPTER) break;
+      if (!merged.some((x) => x.question === m.question)) merged.push(m);
+    }
+    chapter.mcqs = merged.slice(0, MAX_MCQS_PER_CHAPTER);
+  } else {
+    chapter.mcqs = [];
+  }
+
+  chapter.wordCount = countWords(chapterPlain(chapter));
+  return chapter;
 }
 
 async function writeChapterWithAi(opts: {

@@ -430,32 +430,12 @@ export function composeHindiChapter(opts: {
       ]
     : [];
 
-  const questions: QuizItem[] = settings.includeExercises
-    ? [
-        {
-          question: `${title} का मुख्य शोध प्रश्न अपने शब्दों में लिखिए।`,
-          answer: item.summary || title,
-          sourceIds: [],
-        },
-        {
-          question: "इस अध्याय का कोई दावा तथ्य है, व्याख्या है, या परिकल्पना? कारण दीजिए।",
-          answer: "उत्तर स्रोत के प्रकार और लेखक के अनुमान पर निर्भर करता है।",
-          sourceIds: [],
-        },
-      ]
-    : [];
-
-  const mcqs: QuizItem[] = settings.includeMcqs
-    ? [
-        {
-          question: `${title} के संदर्भ में आंबेडकर या किसी लेखक की ऐतिहासिक परिकल्पना को कैसे पढ़ना चाहिए?`,
-          options: ["सिद्ध सार्वभौमिक तथ्य", "लेखक की व्याख्या / परिकल्पना", "केवल मनोरंजन", "स्रोत-रहित अनुमान जिसे छिपाया जाए"],
-          answer: "लेखक की व्याख्या / परिकल्पना",
-          explanation: "ऐतिहासिक परिकल्पना को सिद्ध तथ्य के रूप में प्रस्तुत नहीं किया जाता।",
-          sourceIds: [],
-        },
-      ]
-    : [];
+  // Q&A is built centrally by enforceChapterQa() from this chapter's actual
+  // content. The previous hard-coded pair produced a non-answer
+  // ("उत्तर स्रोत के प्रकार ... पर निर्भर करता है") and an MCQ naming Ambedkar
+  // even in books with no connection to him.
+  const questions: QuizItem[] = [];
+  const mcqs: QuizItem[] = [];
 
   const ch: Chapter = {
     id: item.id,

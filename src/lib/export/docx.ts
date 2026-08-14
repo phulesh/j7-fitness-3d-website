@@ -126,6 +126,7 @@ export async function exportDocx(doc: EbookDocument, destPath: string): Promise<
         children.push(p(`${i + 1}. ${q.question}`));
         (q.options || []).forEach((opt, j) => children.push(p(`   ${String.fromCharCode(65 + j)}. ${opt}`)));
         children.push(p(`${labels.answers}: ${q.answer}`));
+        if (q.explanation) children.push(p(`${labels.explanation}: ${q.explanation}`));
       });
     }
   }

@@ -126,8 +126,23 @@ export function buildBookPages(doc: EbookDocument): BookPage[] {
     const learning = [
       chapter.keyPoints.length ? `${labels.keyPoints}\n\n${chapter.keyPoints.join("\n\n")}` : "",
       chapter.summary ? `${labels.summary}\n\n${strip(chapter.summary)}` : "",
-      chapter.questions.length ? `${labels.questions}\n\n${chapter.questions.map((q, n) => `${n + 1}. ${q.question}`).join("\n\n")}` : "",
-      chapter.mcqs.length ? `${labels.mcqs}\n\n${chapter.mcqs.map((q, n) => `${n + 1}. ${q.question}\n${(q.options || []).join(" · ")}`).join("\n\n")}` : "",
+      // Questions must carry their answers here too: the 3D reader is a way to
+      // read the finished book, not a quiz with the answers withheld.
+      chapter.questions.length
+        ? `${labels.questions}\n\n${chapter.questions
+            .map((q, n) => `${n + 1}. ${q.question}\n${labels.answers}: ${strip(q.answer)}`)
+            .join("\n\n")}`
+        : "",
+      chapter.mcqs.length
+        ? `${labels.mcqs}\n\n${chapter.mcqs
+            .map(
+              (q, n) =>
+                `${n + 1}. ${q.question}\n${(q.options || []).join(" · ")}\n${labels.answers}: ${q.answer}${
+                  q.explanation ? `\n${labels.explanation}: ${strip(q.explanation)}` : ""
+                }`
+            )
+            .join("\n\n")}`
+        : "",
     ].filter(Boolean).join("\n\n");
     if (learning) pages.push(...textPages("chapter", hindi ? "अध्याय समीक्षा" : "Chapter Review", learning, i));
   }

@@ -94,7 +94,7 @@ export async function runResearch(
   const rejected: RejectedSource[] = [];
   const liveWeb = await probeLiveWeb();
 
-  const considerHit = (h: RawHit): boolean => {
+  const considerHit = (h: RawHit & { extractedText?: string }): boolean => {
     const ev = evaluateCandidate(h, profile, {
       researchQuestions: profile.researchQuestions,
       outlineTitles: profile.chapterPlan?.map((c) => c.title),
@@ -108,7 +108,12 @@ export async function runResearch(
 
   onProgress?.("Searching encyclopedias and knowledge bases");
 
-  const corpusHits = searchCorpus(focusedCorpusQuery(profile, topic), 10).filter((h) => considerHit(h));
+  // Evaluate corpus documents against their FULL retrieved text. Judging them
+  // on the 400-character snippet alone under-scored genuinely on-topic
+  // encyclopedia articles and rejected them.
+  const corpusHits = searchCorpus(focusedCorpusQuery(profile, topic), 10).filter((h) =>
+    considerHit({ ...h, extractedText: h.extract || h.snippet })
+  );
   for (const h of corpusHits) {
     hits.push({ title: h.title, url: h.url, snippet: h.snippet, provider: "corpus" });
   }
@@ -754,6 +759,7 @@ export function buildOutlineFromResearch(
     settings,
     analysis,
     requestedCount: n,
+    sources: bundle.sources,
   });
   if (planned.length) {
     const items = plannedToOutlineItems(planned, bundle);
@@ -866,6 +872,7 @@ function defaultOutline(
     settings,
     analysis,
     requestedCount: n,
+    sources: bundle.sources,
   });
   if (planned.length) return plannedToOutlineItems(planned, bundle);
 

@@ -224,6 +224,77 @@ export async function exportFlipbook(doc: EbookDocument): Promise<Buffer> {
         );
       }
     }
+
+    // The 3D reader must show the finished book, which includes the review
+    // material. Answers and MCQ explanations are printed with the questions
+    // rather than withheld.
+    const reviewLabels = {
+      summary: hindi ? "सारांश" : "Summary",
+      questions: hindi ? "प्रश्न और उत्तर" : "Questions & Answers",
+      mcqs: hindi ? "बहुविकल्पीय प्रश्न" : "Multiple-choice questions",
+      answer: hindi ? "उत्तर" : "Answer",
+      explanation: hindi ? "व्याख्या" : "Explanation",
+    };
+
+    if (chapter.summary?.trim()) {
+      const summaryText = plain(chapter.summary);
+      for (const [partIndex, part] of paginate(summaryText).entries()) {
+        pages.push(
+          make(
+            "page",
+            `${reviewLabels.summary} — ${chapter.title}${partIndex ? " — continued" : ""}`,
+            `<p>${escapeHtml(part)}</p>`,
+            part,
+            String(pages.length + 1)
+          )
+        );
+      }
+    }
+
+    if (chapter.questions.length) {
+      const qaText = chapter.questions
+        .map((q, n) => `${n + 1}. ${plain(q.question)}\n${reviewLabels.answer}: ${plain(q.answer)}`)
+        .join("\n\n");
+      for (const [partIndex, part] of paginate(qaText).entries()) {
+        pages.push(
+          make(
+            "page",
+            `${reviewLabels.questions} — ${chapter.title}${partIndex ? " — continued" : ""}`,
+            part
+              .split(/\n{2,}/)
+              .map((block) => `<p>${escapeHtml(block).replace(/\n/g, "<br/>")}</p>`)
+              .join(""),
+            part,
+            String(pages.length + 1)
+          )
+        );
+      }
+    }
+
+    if (chapter.mcqs.length) {
+      const mcqText = chapter.mcqs
+        .map((m, n) => {
+          const options = (m.options || []).map((o, j) => `${String.fromCharCode(65 + j)}. ${o}`).join("\n");
+          return `${n + 1}. ${plain(m.question)}\n${options}\n${reviewLabels.answer}: ${m.answer}${
+            m.explanation ? `\n${reviewLabels.explanation}: ${plain(m.explanation)}` : ""
+          }`;
+        })
+        .join("\n\n");
+      for (const [partIndex, part] of paginate(mcqText).entries()) {
+        pages.push(
+          make(
+            "page",
+            `${reviewLabels.mcqs} — ${chapter.title}${partIndex ? " — continued" : ""}`,
+            part
+              .split(/\n{2,}/)
+              .map((block) => `<p>${escapeHtml(block).replace(/\n/g, "<br/>")}</p>`)
+              .join(""),
+            part,
+            String(pages.length + 1)
+          )
+        );
+      }
+    }
   }
 
   for (const [partIndex, part] of paginate(plain(doc.conclusion)).entries()) {

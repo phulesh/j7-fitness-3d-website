@@ -94,9 +94,14 @@ export function ReadingView({ doc, initialChapter = 0 }: { doc: EbookDocument; i
             <section className="mt-6">
               <h2 className="font-display text-xl">{labels.questions}</h2>
               {chapter.questions.map((q, i) => (
-                <p key={i} className="mt-2 text-sm">
-                  {i + 1}. {q.question}
-                </p>
+                <div key={i} className="mt-3 text-sm">
+                  <p className="font-medium">
+                    {i + 1}. {q.question}
+                  </p>
+                  <p className="mt-1 text-ink-500">
+                    <span className="font-medium">{labels.answers}:</span> {q.answer}
+                  </p>
+                </div>
               ))}
             </section>
           )}
@@ -113,6 +118,14 @@ export function ReadingView({ doc, initialChapter = 0 }: { doc: EbookDocument; i
                       <li key={o}>{o}</li>
                     ))}
                   </ul>
+                  <p className="mt-1 text-ink-500">
+                    <span className="font-medium">{labels.answers}:</span> {q.answer}
+                  </p>
+                  {q.explanation && (
+                    <p className="text-ink-500">
+                      <span className="font-medium">{labels.explanation}:</span> {q.explanation}
+                    </p>
+                  )}
                 </div>
               ))}
             </section>

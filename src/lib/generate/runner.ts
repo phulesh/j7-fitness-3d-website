@@ -10,6 +10,7 @@ import { isHindiOutput } from "../language";
 import { documentNeedsHindiRegen, ensureHindiChapter, localizeOutline } from "./hindi";
 import { friendlyError } from "../errors";
 import { runFinalQualityCheck } from "./quality";
+import { describeValidation, validateEbook } from "./validate";
 
 const RESEARCH_TIMEOUT_MS = Number(process.env.RESEARCH_TIMEOUT_MS || 7 * 60 * 1000);
 
@@ -752,6 +753,32 @@ async function writeChapters(doc: EbookDocument, jobId: string, bundle: any, sta
   });
   updateJob(jobId, { status: "running", step: "generating_figures", percent: 84, message: "Generating figures", lastChapterIndex: chapters.length - 1 });
 
+  // Content validation runs BEFORE packaging. A book that fails here is never
+  // marked Ready and never exported; the report tells the user exactly what is
+  // missing and which targeted regeneration fixes it.
+  updateEbook(doc.id, {
+    status: "exporting",
+    progress: { step: "validating", percent: 86, message: "Validating book completeness..." },
+  });
+  const preflight = validateEbook(getEbook(doc.id)!);
+  if (!preflight.ok) {
+    const hindi = isHindiOutput(doc.outputLanguage || doc.language);
+    const summary = describeValidation(preflight, hindi);
+    updateEbook(doc.id, {
+      status: "failed",
+      validation: preflight,
+      error: summary,
+      progress: {
+        step: "validation_failed",
+        percent: 86,
+        message: hindi ? "पुस्तक अभी पूर्ण नहीं है।" : "Book is not complete yet.",
+        detail: summary,
+      },
+    });
+    updateJob(jobId, { status: "failed", step: "validating", message: "Validation failed", error: summary });
+    return;
+  }
+
   const final = await runFinalQualityCheck(doc.id, (stage, percent, message) => {
     updateEbook(doc.id, { status: "exporting", progress: { step: stage, percent, message } });
     updateJob(jobId, { status: "running", step: stage, percent, message, lastChapterIndex: chapters.length - 1 });
@@ -759,6 +786,7 @@ async function writeChapters(doc: EbookDocument, jobId: string, bundle: any, sta
 
   updateEbook(doc.id, {
     status: "complete",
+    validation: preflight,
     lastCompletedStage: "complete",
     qualityReport: final.report,
     exports: final.exports,
