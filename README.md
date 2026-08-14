@@ -47,7 +47,30 @@ Open [http://localhost:3000](http://localhost:3000).
 | `MAX_UPLOAD_MB` | Syllabus upload limit |
 | `RATE_LIMIT_PER_HOUR` | Generation cap per user/IP |
 
-API keys never ship to the browser.
+API keys never ship to the browser. `AI_BASE_URL` is the API root (for example, `https://api.openai.com/v1`), **not** the full `/chat/completions` URL. `AI_MODEL` must be the provider's exact model ID. No AI provider is enabled by default and Folio never falls back to a fake model.
+
+### Railway production configuration
+
+The linked Railway service needs a persistent volume; repository configuration cannot create or attach one on your behalf.
+
+1. Open Railway → project **surprising-miracle** → service **j7-fitness-3d-website**.
+2. Open **Volumes**, create/attach a volume, and set its mount path to **`/app/data`**. Do not initialize or replace an existing volume: attach the existing one first so prior `folio.db` / `folio.json` data can be recovered.
+3. Open the service's **Variables** tab and add:
+   - `DATABASE_URL=file:/app/data/folio.db`
+   - `AI_PROVIDER=openai-compatible`
+   - `AI_API_KEY=<the real provider secret>`
+   - `AI_BASE_URL=https://api.openai.com/v1` (or another vendor's OpenAI-compatible `/v1` API root)
+   - `AI_MODEL=<the provider's exact chat model ID>`
+   - `NEXT_PUBLIC_APP_URL=https://<the Railway public domain>`
+4. Redeploy. `/api/health` returns HTTP 200 only when an absolute persistent database path is configured. It reports only configured/not-configured states, never credentials.
+5. Run the persistence acceptance test against the public domain from a trusted terminal with a new dedicated test email: `TEST_BASE_URL=https://<domain> TEST_ACCOUNT_EMAIL=<new-test-email> TEST_ACCOUNT_PASSWORD=<strong-test-password> npm run test:persistence`. Keep those values and the printed ebook ID, restart or redeploy the Railway service, then verify that same record with `TEST_BASE_URL=… TEST_ACCOUNT_EMAIL=… TEST_ACCOUNT_PASSWORD=… TEST_EBOOK_ID=… npm run test:persistence:after-restart`. The operator must trigger the restart because Railway credentials are intentionally not stored in this repository. Do not put test credentials in CI logs.
+6. With the four AI secrets present, run `npm run test:ai:real` in Railway's service shell or another trusted server shell with the same variables. The test makes one real provider request and never prints the key or response body.
+
+Production intentionally refuses a missing/relative `DATABASE_URL`; a relative SQLite file can silently disappear on redeploy. Run one replica while using SQLite, because the mounted database is a single-writer application database.
+
+### Existing-data recovery
+
+Startup performs a non-destructive one-time import from `data/folio.json` when `folio.db` has no `app_state` record. It records the import in `migration_log` and does not delete the JSON source. Before attaching a new empty volume, inspect the existing Railway volume for `/app/data/folio.db`, SQLite `-wal`/`-shm` files, and `/app/data/folio.json`; copy all of them together while the old service is stopped. Browser storage contains only an unfinished create-form draft and reader bookmarks, not accounts or ebooks, so it cannot restore server account records. Those optional device-only preferences remain on the device and are not used as the primary database.
 
 Public research connectors can still collect evidence without a paid search key. Ebook generation, however, requires the server-side AI configuration and returns a visible 503 configuration error rather than publishing fallback or empty content. Retrieved encyclopaedia extracts (CC BY-SA) are kept in `data/corpus`; the reference list is always the set of URLs actually collected for that title.
 

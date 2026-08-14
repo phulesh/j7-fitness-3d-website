@@ -67,6 +67,7 @@ export function validateBookForPublishing(doc: EbookDocument): PublishGateResult
   const chapters = doc.chapters || [];
   const requested = doc.outline?.length || doc.settings.chapterCount || chapters.length;
   const minPerChapter = minWordsPerChapter(doc.settings.length);
+  const sourceIds = new Set((doc.sources || []).map((source) => Number(source.id)));
 
   let words = 0;
   let questions = 0;
@@ -113,8 +114,19 @@ export function validateBookForPublishing(doc: EbookDocument): PublishGateResult
       seenBodies.add(sig);
     }
 
+    if (!ch.sourceIds?.length) {
+      errors.push(`${label} has no evidence-source attribution.`);
+    } else {
+      const unknown = ch.sourceIds.filter((id) => !sourceIds.has(Number(id)));
+      if (unknown.length) errors.push(`${label} cites unknown source IDs: ${unknown.join(", ")}.`);
+    }
+    for (const section of ch.sections) {
+      const unknown = (section.sourceIds || []).filter((id) => !sourceIds.has(Number(id)));
+      if (unknown.length) errors.push(`${label}, section “${section.heading}” cites unknown source IDs.`);
+    }
+
     if (doc.settings.includeExercises) {
-      if (ch.questions.length < 3) errors.push(`${label} has only ${ch.questions.length} review questions (need at least 3).`);
+      if (ch.questions.length < 5) errors.push(`${label} has only ${ch.questions.length} review questions (need at least 5).`);
       for (const q of ch.questions) {
         questions++;
         const v = validateQuestionAnswer(q.question, q.answer);
@@ -131,7 +143,7 @@ export function validateBookForPublishing(doc: EbookDocument): PublishGateResult
     }
 
     if (doc.settings.includeMcqs) {
-      if (!ch.mcqs.length) errors.push(`${label} has no MCQs.`);
+      if (ch.mcqs.length < 2) errors.push(`${label} has only ${ch.mcqs.length} MCQs (need at least 2).`);
       for (const m of ch.mcqs) {
         mcqs++;
         const v = validateMcq(m);
@@ -159,8 +171,15 @@ export function validateBookForPublishing(doc: EbookDocument): PublishGateResult
   const sources = doc.sources || [];
   if (!sources.length) errors.push("No sources — a research-based book requires references.");
   if (doc.settings.includeReferences && !sources.length) errors.push("References requested but source list is empty.");
-  const verifiable = sources.filter((s) => /^https?:\/\//.test(s.url) || s.url.startsWith("folio-upload://"));
-  if (sources.length && !verifiable.length) errors.push("No source has traceable provenance (valid URL or author upload).");
+  const verifiable = sources.filter((s) => {
+    if (s.url.startsWith("folio-upload://")) return Boolean(s.title?.trim());
+    try {
+      const url = new URL(s.url);
+      return url.protocol === "https:" && Boolean(url.hostname) && !/^(?:example\.(?:com|org|net)|localhost)$/i.test(url.hostname);
+    } catch { return false; }
+  });
+  if (sources.length && !verifiable.length) errors.push("No source has traceable provenance (valid HTTPS URL or author upload).");
+  if (verifiable.length !== sources.length) errors.push(`${sources.length - verifiable.length} source(s) have invalid or non-production provenance URLs.`);
 
   // Total word count floor: requested chapters × per-chapter minimum.
   const minTotal = Math.max(1000, (requested || 1) * minPerChapter);
