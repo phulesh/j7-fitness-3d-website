@@ -1,17 +1,18 @@
 import fs from "fs";
 import path from "path";
-import { DatabaseSync } from "node:sqlite";
+import type { DatabaseSync as DatabaseSyncHandle } from "node:sqlite";
 
 /**
  * SQLite-backed persistence for accounts and ebooks.
  *
  * RUNTIME-ONLY: this module performs NO filesystem or database work at import
- * time. The database is opened lazily on first use (getDatabase/getStore/
- * persist), so `next build`, Docker image creation, and Next.js page
- * collection never touch the database. In production the database lives on
- * the persistent Railway volume mounted at /app/data
+ * time. The `node:sqlite` builtin is also required lazily (it only exists on
+ * Node >= 22.5), so builds and page collection work on any Node version. The
+ * database opens on first use (getDatabase/getStore/persist); in production it
+ * lives on the persistent Railway volume mounted at /app/data
  * (RAILWAY_VOLUME_MOUNT_PATH), so accounts and ebooks survive restarts,
- * redeploys, and scale events, and are shared across devices.
+ * redeploys, and scale events, and are shared across devices. Node 22 is
+ * pinned for the runtime via .nvmrc / nixpacks.toml / Dockerfile.
  */
 
 export type StoreShape = {
@@ -78,14 +79,23 @@ export function getDatabasePath(): string {
   return path.resolve(process.cwd(), value);
 }
 
-let db: DatabaseSync | null = null;
+let db: DatabaseSyncHandle | null = null;
 let cache: StoreShape | null = null;
 
-export function getDatabase(): DatabaseSync {
+let DatabaseSyncCtor: (typeof DatabaseSyncHandle) | null = null;
+/** Lazily loads the node:sqlite builtin (Node >= 22.5). Never runs at build time. */
+function loadDatabaseSync(): typeof DatabaseSyncHandle {
+  if (!DatabaseSyncCtor) {
+    DatabaseSyncCtor = require("node:sqlite").DatabaseSync as typeof DatabaseSyncHandle;
+  }
+  return DatabaseSyncCtor;
+}
+
+export function getDatabase(): DatabaseSyncHandle {
   if (!db) {
     const dbPath = getDatabasePath();
     fs.mkdirSync(path.dirname(dbPath), { recursive: true });
-    const handle = new DatabaseSync(dbPath);
+    const handle = new (loadDatabaseSync())(dbPath);
     handle.exec("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;");
     // IF NOT EXISTS: an existing database (from an earlier deployment on the
     // volume) is migrated/used in place, never replaced with a fresh one.

@@ -1,0 +1,17 @@
+# Node 22 is required: the app uses the node:sqlite builtin (Node >= 22.5).
+# Pinned here AND via .nvmrc so both the build and the runtime use Node 22.
+# This file intentionally declares NO secrets: API keys (AI_API_KEY,
+# SEARCH_API_KEY, ...) are never listed here and never appear as ARG/ENV in
+# any image; they are read from process.env at server runtime only.
+
+[variables]
+NIXPACKS_NODE_VERSION = "22"
+
+[phases.install]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "node scripts/ensure-runtime-data.mjs && npm start"
