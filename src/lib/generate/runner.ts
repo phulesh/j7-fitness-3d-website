@@ -804,11 +804,25 @@ async function writeChapters(doc: EbookDocument, jobId: string, bundle: any, sta
     updateJob(jobId, { status: "running", step: stage, percent, message, lastChapterIndex: chapters.length - 1 });
   });
 
+  // READY is allowed ONLY when the central publishing gate has passed.
+  // runFinalQualityCheck throws when any critical check fails, and it also
+  // persists the publishGate report; re-assert here so a book can never be
+  // shown as successful while its content is empty or incomplete.
+  const gated = getEbook(doc.id);
+  if (!gated?.publishGate?.valid) {
+    const reasons = gated?.publishGate?.errors?.slice(0, 5).join("; ") || "Publishing gate did not pass.";
+    throw new Error(`Book failed the final publishing gate: ${reasons}`);
+  }
+  const finalWordCount =
+    gated.publishGate.stats.words ||
+    countWords(gated.introduction + " " + gated.conclusion) + gated.chapters.reduce((n, c) => n + (c?.wordCount || 0), 0);
+
   updateEbook(doc.id, {
     status: "complete",
     lastCompletedStage: "complete",
     qualityReport: final.report,
     exports: final.exports,
+    wordCount: finalWordCount,
     progress: { step: "complete", percent: 100, message: "Book ready" },
     error: undefined,
   });

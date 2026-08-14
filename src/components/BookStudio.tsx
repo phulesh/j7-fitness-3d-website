@@ -256,7 +256,11 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
             {doc?.title || (loadState === "error" ? "Could not open ebook" : loading ? "Loading ebook…" : "Ebook")}
           </h1>
           <p className="mt-1 text-sm text-ink-400">
-            {doc ? `${doc.outputLanguage || doc.language} · ${doc.type} · ${displayStatus(doc.status)} · ${doc.wordCount.toLocaleString()} words` : ""}
+            {doc
+              ? `${doc.outputLanguage || doc.language} · ${doc.type} · ${displayStatus(doc.status)}${
+                  doc.wordCount > 0 ? ` · ${doc.wordCount.toLocaleString()} words` : doc.chapters?.length ? "" : " · draft"
+                }`
+              : ""}
           </p>
           {doc && <LanguageCheckBadge doc={doc} />}
         </div>
@@ -288,27 +292,107 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
       <ErrorBanner message={error} onDismiss={() => setError("")} onRetry={() => load().catch(() => {})} />
 
       {generating && (
-        <ProgressPanel
-          message={doc?.progress?.message || "Working…"}
-          detail={doc?.progress?.detail}
-          percent={doc?.progress?.percent || 10}
-          step={doc?.progress?.step}
-          language={doc?.outputLanguage || doc?.language}
-        />
+        <>
+          <ProgressPanel
+            message={doc?.progress?.message || "Working…"}
+            detail={doc?.progress?.detail}
+            percent={doc?.progress?.percent || 10}
+            step={doc?.progress?.step}
+            language={doc?.outputLanguage || doc?.language}
+          />
+          {doc && (
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-ink-400">
+              <span className="rounded-full bg-paper-100 px-3 py-1">
+                {doc.sources.length ? "✓" : "…"} Sources found: {doc.sources.length}
+              </span>
+              <span className="rounded-full bg-paper-100 px-3 py-1">
+                {doc.researchQuality ? "✓" : "…"} Verified: {doc.researchQuality?.relevantCount ?? 0} · Rejected: {doc.researchQuality?.rejectedCount ?? 0}
+              </span>
+              <span className="rounded-full bg-paper-100 px-3 py-1">
+                {doc.outline.length ? "✓" : "…"} Outline: {doc.outline.length} chapters
+              </span>
+              <span className="rounded-full bg-paper-100 px-3 py-1">
+                {doc.chapters.filter((c) => c.status === "complete").length}/{doc.outline.length || doc.settings?.chapterCount || 0} chapters written
+              </span>
+              <span className="rounded-full bg-paper-100 px-3 py-1">
+                Q&A: {doc.chapters.reduce((n, c) => n + (c.questions?.length || 0), 0)} questions
+              </span>
+              <span className="rounded-full bg-paper-100 px-3 py-1">
+                MCQ: {doc.chapters.reduce((n, c) => n + (c.mcqs?.length || 0), 0)}
+              </span>
+            </div>
+          )}
+        </>
       )}
 
       {doc?.status === "failed" && (
         <div className="mt-4 rounded-xl border border-unsupported/30 p-4 text-sm">
-          {doc.error || "Generation interrupted. Your ebook data has been saved."}
-          <button
-            className="btn-gold ml-3 !py-1.5"
-            onClick={async () => {
-              await api(`/api/ebooks/${ebookId}/generate`, { method: "POST", body: JSON.stringify({ resume: true }) });
-              load();
-            }}
-          >
-            Resume Generation
-          </button>
+          <p className="font-semibold">{doc.error || "Generation interrupted. Your ebook data has been saved."}</p>
+          {doc.publishGate && !doc.publishGate.valid && (
+            <ul className="mt-2 list-disc pl-5 text-xs text-unsupported">
+              {doc.publishGate.errors.slice(0, 8).map((err, i) => (
+                <li key={i}>{err}</li>
+              ))}
+              {doc.publishGate.errors.length > 8 && <li>… {doc.publishGate.errors.length - 8} more</li>}
+            </ul>
+          )}
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              className="btn-gold !py-1.5"
+              disabled={!!busy}
+              onClick={async () => {
+                await api(`/api/ebooks/${ebookId}/generate`, { method: "POST", body: JSON.stringify({ resume: true }) });
+                load();
+              }}
+            >
+              Resume Generation
+            </button>
+            <button
+              className="btn-ghost !py-1.5"
+              disabled={!!busy}
+              onClick={async () => {
+                setBusy("repair-qa");
+                try {
+                  await api(`/api/ebooks/${ebookId}/repair`, { method: "POST", body: JSON.stringify({ action: "qa" }) });
+                  await api(`/api/ebooks/${ebookId}/repair`, { method: "POST", body: JSON.stringify({ action: "depth" }) });
+                  await load();
+                } catch (e: any) {
+                  setError(e.message);
+                } finally {
+                  setBusy("");
+                }
+              }}
+            >
+              {busy === "repair-qa" ? "Repairing…" : "Regenerate Failed Answers & MCQs"}
+            </button>
+            <button
+              className="btn-ghost !py-1.5"
+              disabled={!!busy || !doc.chapters?.length}
+              onClick={async () => {
+                setBusy("repair-exports");
+                try {
+                  await api(`/api/ebooks/${ebookId}/repair`, { method: "POST", body: JSON.stringify({ action: "exports" }) });
+                  await load();
+                } catch (e: any) {
+                  setError(e.message);
+                } finally {
+                  setBusy("");
+                }
+              }}
+            >
+              {busy === "repair-exports" ? "Rebuilding…" : "Rebuild 3D Book & Exports"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {doc && doc.status === "complete" && doc.publishGate && (
+        <div className="mt-4 rounded-xl border border-verified/30 bg-verified/5 p-4 text-sm">
+          <p className="font-semibold text-verified">
+            ✓ {doc.publishGate.stats.chapters} chapters · {doc.publishGate.stats.words.toLocaleString()} words ·{" "}
+            {doc.publishGate.stats.answeredQuestions}/{doc.publishGate.stats.questions} questions answered ·{" "}
+            {doc.publishGate.stats.validMcqs}/{doc.publishGate.stats.mcqs} MCQs valid · {doc.publishGate.stats.references} traceable references
+          </p>
         </div>
       )}
 
@@ -498,9 +582,27 @@ export function BookStudio({ ebookId, tab }: { ebookId: string; tab: StudioTab }
               {doc.researchQuality?.relevantCount ?? doc.sources.length} approved · {doc.researchQuality?.rejectedCount ?? (doc.rejectedSources || []).length} rejected
             </p>
             {writingBlocked && (
-              <p className="mt-3 text-sm text-unsupported">
-                {doc.researchQuality?.contaminationReason || "Not enough reliable sources were found."}
-              </p>
+              <div className="mt-3 rounded-lg border border-unsupported/30 bg-unsupported/5 p-3 text-sm">
+                <p className="font-semibold text-unsupported">
+                  {doc.researchQuality?.relevantCount === 0
+                    ? "Research could not find enough verified sources for this topic."
+                    : doc.researchQuality?.contaminationReason || "Not enough reliable sources were found."}
+                </p>
+                <p className="mt-1 text-xs text-ink-400">
+                  {doc.researchQuality?.contaminationReason}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button className="btn-gold !py-1.5" disabled={!!busy || researchState === "running"} onClick={startResearch}>
+                    Retry Research
+                  </button>
+                  <button className="btn-ghost !py-1.5" onClick={() => go("sources")}>
+                    Review Sources
+                  </button>
+                  <button className="btn-ghost !py-1.5" onClick={() => go("settings")}>
+                    Edit Topic
+                  </button>
+                </div>
+              </div>
             )}
             {(researchState === "error" || doc.status === "failed") && (
               <p className="mt-3 text-sm text-unsupported">{doc.researchRun?.error || doc.error || "शोध पूरा नहीं हो सका। पुनः प्रयास करें।"}</p>

@@ -21,7 +21,7 @@ export function chapterPlain(ch: Chapter): string {
 }
 
 export function countWords(s: string) {
-  return (s.trim().match(/[\p{L}\p{N}]+/gu) || []).length;
+  return (s.trim().match(/[\p{L}\p{M}\p{N}]+/gu) || []).length;
 }
 
 export function labelsFor(lang: string) {

@@ -111,7 +111,7 @@ const STOP_ENT = new Set([
 
 export function extractKeyTerms(text: string, limit = 24): string[] {
   const freq = new Map<string, number>();
-  const words = text.toLowerCase().match(/[\p{L}]{4,}/gu) || [];
+  const words = text.toLowerCase().match(/[\p{L}\p{M}]{4,}/gu) || [];
   for (const w of words) {
     if (STOP.has(w)) continue;
     freq.set(w, (freq.get(w) || 0) + 1);
@@ -146,5 +146,5 @@ export function crossCheckFacts(
 }
 
 function significantTokens(s: string): string[] {
-  return (s.toLowerCase().match(/[\p{L}\p{N}]{4,}/gu) || []).filter((w) => !STOP.has(w));
+  return (s.toLowerCase().match(/[\p{L}\p{M}\p{N}]{4,}/gu) || []).filter((w) => !STOP.has(w));
 }

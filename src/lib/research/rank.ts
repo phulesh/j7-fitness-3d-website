@@ -223,7 +223,7 @@ export function scoreSource(input: {
 export function tokenize(s: string): string[] {
   return s
     .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
+    .replace(/[^\p{L}\p{M}\p{N}\s]/gu, " ")
     .split(/\s+/)
     .filter((w) => w.length > 2 && !STOP.has(w));
 }

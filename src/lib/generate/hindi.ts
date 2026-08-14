@@ -3,6 +3,7 @@ import { chat, aiConfigured } from "../ai";
 import { isAcceptableHindi, isHindiOutput } from "../language";
 import { splitSentences } from "../research/extract";
 import { classifyClaim, claimKindLabel, type TopicProfile } from "../research/relevance";
+import { termsInText } from "../research/translit";
 import type {
   Chapter,
   ChapterSection,
@@ -433,14 +434,16 @@ export function composeHindiChapter(opts: {
   const questions: QuizItem[] = settings.includeExercises
     ? [
         {
-          question: `${title} का मुख्य शोध प्रश्न अपने शब्दों में लिखिए।`,
-          answer: item.summary || title,
-          sourceIds: [],
+          question: `${title} का मुख्य शोध प्रश्न अपने शब्दों में लिखिए और उसका उत्तर संक्षेप में दीजिए।`,
+          answer: `इस अध्याय का मुख्य शोध प्रश्न है: ${item.researchQuestion || `${title} के बारे में स्रोत क्या स्थापित करते हैं?`} ${
+            item.summary || `अध्याय «${title}» इसी प्रश्न का उत्तर अनुमोदित स्रोतों के साक्ष्य से देता है।`
+          } उत्तर बनाते समय अध्याय की मुख्य चर्चा में उद्धृत स्रोतों का प्रयोग किया गया है और परिकल्पना को स्थापित तथ्य से अलग रखा गया है।`,
+          sourceIds: relevantSources.slice(0, 2).map((s) => s.id),
         },
         {
-          question: "इस अध्याय का कोई दावा तथ्य है, व्याख्या है, या परिकल्पना? कारण दीजिए।",
-          answer: "उत्तर स्रोत के प्रकार और लेखक के अनुमान पर निर्भर करता है।",
-          sourceIds: [],
+          question: "इस अध्याय का कोई दावा तथ्य है, व्याख्या है, या परिकल्पना? कारण सहित समझाइए।",
+          answer: `इसका निर्णय स्रोत की प्रकृति से होता है: जो कथन उद्धृत प्राथमिक या आधिकारिक स्रोत में सीधे दर्ज है, वह स्थापित तथ्य है; जो किसी विद्वान या लेखक का निष्कर्ष है, वह व्याख्या है; और जो अनुमान पर टिका है, वह परिकल्पना है। उदाहरण के लिए «${title}» की मुख्य चर्चा का पहला उद्धृत कथन स्रोत-समर्थित है, जबकि उसके कारणों की व्याख्या लेखक की व्याख्या की श्रेणी में आती है। इसी कसौटी से अध्याय के हर दावे को परखा जा सकता है।`,
+          sourceIds: relevantSources.slice(0, 2).map((s) => s.id),
         },
       ]
     : [];
@@ -448,10 +451,10 @@ export function composeHindiChapter(opts: {
   const mcqs: QuizItem[] = settings.includeMcqs
     ? [
         {
-          question: `${title} के संदर्भ में आंबेडकर या किसी लेखक की ऐतिहासिक परिकल्पना को कैसे पढ़ना चाहिए?`,
+          question: `${title} के संदर्भ में किसी लेखक या आचार्य की व्याख्या/परिकल्पना को कैसे पढ़ना चाहिए?`,
           options: ["सिद्ध सार्वभौमिक तथ्य", "लेखक की व्याख्या / परिकल्पना", "केवल मनोरंजन", "स्रोत-रहित अनुमान जिसे छिपाया जाए"],
           answer: "लेखक की व्याख्या / परिकल्पना",
-          explanation: "ऐतिहासिक परिकल्पना को सिद्ध तथ्य के रूप में प्रस्तुत नहीं किया जाता।",
+          explanation: "व्याख्या या परिकल्पना को सिद्ध तथ्य के रूप में प्रस्तुत नहीं किया जाता; उसे स्रोत के साथ व्याख्या कहकर पढ़ा जाता है।",
           sourceIds: [],
         },
       ]
@@ -490,11 +493,14 @@ export function composeHindiChapter(opts: {
 }
 
 function pickSources(item: OutlineItem, sources: SourceRecord[]): SourceRecord[] {
-  const words = item.title.toLowerCase().split(/\s+/).filter((w) => w.length > 3);
+  const words = item.title.toLowerCase().split(/[\s—–:,/]+/).filter((w) => w.length > 3);
   const scored = sources
     .map((s) => {
       const hay = `${s.title} ${s.snippet} ${s.extractedText || ""}`.toLowerCase();
-      const score = words.filter((w) => hay.includes(w)).length + (s.primarySource ? 2 : 0) + ((s.relevanceScore || 0) > 80 ? 1 : 0);
+      // Cross-script: Hindi chapter titles must match English sources too.
+      const direct = words.filter((w) => hay.includes(w)).length;
+      const translit = direct ? 0 : termsInText(hay, words).length;
+      const score = direct + translit + (s.primarySource ? 2 : 0) + ((s.relevanceScore || 0) > 80 ? 1 : 0);
       return { s, score };
     })
     .sort((a, b) => b.score - a.score || (b.s.authorityScore || 0) - (a.s.authorityScore || 0));

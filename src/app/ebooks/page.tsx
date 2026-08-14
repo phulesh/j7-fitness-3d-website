@@ -148,7 +148,13 @@ export default function LibraryPage() {
                   {e.language} · {displayStatus(e.status as any)} · updated {new Date(e.updatedAt || e.createdAt).toLocaleDateString()}
                 </p>
                 <p className="mt-1 text-sm text-ink-400">
-                  {e.chapterCount} chapters · {e.wordCount.toLocaleString()} words
+                  {/* A finished book always has real words (publish gate). For drafts,
+                      show progress wording instead of a misleading “0 words”. */}
+                  {e.wordCount > 0
+                    ? `${e.chapterCount} chapters · ${e.wordCount.toLocaleString()} words`
+                    : e.chapterCount > 0
+                      ? `${e.chapterCount} chapters planned · not written yet`
+                      : "Draft — research not started"}
                 </p>
                 <div className="mt-4 flex flex-wrap gap-2">
                   <Link href={`/ebooks/${id}/read`} className="btn-ghost !py-1.5 !text-xs">

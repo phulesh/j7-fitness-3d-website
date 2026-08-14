@@ -503,7 +503,7 @@ function chapterFromSeed(
   };
 }
 
-function scalePlan(plan: PlannedChapter[], n: number, topic: string, hindi: boolean): PlannedChapter[] {
+function scalePlan(plan: PlannedChapter[], n: number, topic: string, hindi: boolean, seeds: string[] = []): PlannedChapter[] {
   if (plan.length === n) return plan;
   if (plan.length > n) {
     const keep = plan.slice(0, n);
@@ -511,17 +511,33 @@ function scalePlan(plan: PlannedChapter[], n: number, topic: string, hindi: bool
     return keep;
   }
   const extra: PlannedChapter[] = [];
+  const used = new Set(plan.map((p) => p.title));
+  const short = topic.split(/[:：—–-]/)[0].trim() || topic;
+  const fallbackSeeds = hindi
+    ? [
+        `${short} के प्रमुख ग्रंथ और उनका परिचय`,
+        `${short} की क्षेत्रीय परंपराएँ और प्रभाव`,
+        `${short} के अध्ययन में सामान्य भ्रांतियाँ`,
+        `${short} पर आधुनिक शोध और नई दिशाएँ`,
+        `${short} के अभ्यास और अनुप्रयोग`,
+      ]
+    : [
+        `Key texts of ${short} and their introduction`,
+        `Regional traditions and influence of ${short}`,
+        `Common misconceptions in studying ${short}`,
+        `Modern research and new directions on ${short}`,
+        `Practice and application of ${short}`,
+      ];
+  const queue = [...seeds, ...fallbackSeeds];
   let i = 0;
   while (plan.length + extra.length < n) {
-    extra.push(
-      chapterFromSeed(
-        hindi ? `${topic}: अतिरिक्त शोध-पक्ष ${plan.length + extra.length + 1}` : `${topic}: further research theme ${plan.length + extra.length + 1}`,
-        topic,
-        hindi
-      )
-    );
+    const title = queue.shift() || (hindi ? `${short}: विशेष अध्ययन ${plan.length + extra.length + 1}` : `${short}: special study ${plan.length + extra.length + 1}`);
+    if (!used.has(title)) {
+      used.add(title);
+      extra.push(chapterFromSeed(title, topic, hindi));
+    }
     i++;
-    if (i > 20) break;
+    if (i > 40) break;
   }
   return [...plan, ...extra].slice(0, n);
 }
@@ -783,8 +799,87 @@ const STRATEGIES: HistoricalStrategy[] = [
   },
 ];
 
+/**
+ * Split a topic like "वेदांत दर्शन: इतिहास, प्रमुख विचार और प्रमुख आचार्य" into the
+ * short subject ("वेदांत दर्शन") and its requested aspects ("इतिहास",
+ * "प्रमुख विचार", "प्रमुख आचार्य"). Aspects drive extra, topic-specific chapters
+ * instead of generic filler titles.
+ */
+export function splitTopicAspects(topic: string): { subject: string; aspects: string[] } {
+  const cleaned = topic.replace(/\s+/g, " ").trim();
+  const colon = cleaned.search(/[:：—–-]\s/);
+  if (colon < 2) return { subject: cleaned, aspects: [] };
+  const subject = cleaned.slice(0, colon).trim();
+  const rest = cleaned.slice(colon + 1).replace(/^[:：—–-]\s*/, "");
+  const aspects = rest
+    .split(/[,;、·]| और | तथा | एवं | and /i)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 1 && s.length < 60);
+  return { subject: subject || cleaned, aspects };
+}
+
+/** Detect Indian-philosophy / darshana topics that deserve a philosophical plan. */
+function isPhilosophyTopic(topic: string): boolean {
+  return /दर्शन|philosoph|वेदांत|वेदान्त|vedanta|उपनिषद|upanishad|न्याय दर्शन|सांख्य|मीमांसा|योग दर्शन|advaita|dvaita|अद्वैत|द्वैत/i.test(topic);
+}
+
+function philosophyPlan(topic: string, n: number, hindi: boolean, analysis: TopicAnalysis): PlannedChapter[] {
+  const { subject, aspects } = splitTopicAspects(topic);
+  const s = subject;
+  const titles = hindi
+    ? [
+        `${s} का अर्थ, परिभाषा और ऐतिहासिक पृष्ठभूमि`,
+        `${s} की शास्त्रीय नींव: मूल ग्रंथ और परंपरा`,
+        `${s} की केंद्रीय अवधारणाएँ`,
+        `${s} की प्रमुख शाखाएँ और सम्प्रदाय`,
+        `${s} के प्रमुख आचार्य और उनके योगदान`,
+        `${s} में ज्ञान, साधना और मुक्ति की अवधारणा`,
+        `${s} की शाखाओं और आचार्यों के विचारों की तुलना`,
+        `${s} और अन्य दार्शनिक परंपराएँ`,
+        `${s} के प्राथमिक स्रोत, भाष्य और प्रमाण`,
+        `आधुनिक काल में ${s} की व्याख्याएँ`,
+        `${s}: विवाद, आलोचनाएँ और खुले प्रश्न`,
+        `${s} की विरासत और समकालीन प्रासंगिकता`,
+      ]
+    : [
+        `${s}: meaning, definition, and historical background`,
+        `Textual foundations of ${s}: root texts and tradition`,
+        `Central concepts of ${s}`,
+        `Major schools and lineages of ${s}`,
+        `Principal teachers of ${s} and their contributions`,
+        `Knowledge, practice, and liberation in ${s}`,
+        `Comparing the schools and teachers of ${s}`,
+        `${s} and other philosophical traditions`,
+        `Primary sources, commentaries, and evidence for ${s}`,
+        `Modern interpretations of ${s}`,
+        `${s}: debates, critiques, and open questions`,
+        `Legacy and contemporary relevance of ${s}`,
+      ];
+  // Aspect-derived chapters keep the outline tied to what the user asked for.
+  for (const aspect of aspects) {
+    const t = hindi ? `${s} में ${aspect}` : `${aspect} in ${s}`;
+    if (!titles.some((x) => x.includes(aspect))) titles.push(t);
+  }
+  const qs = analysis.researchQuestions || [];
+  const planned = titles.map((t, i) => chapterFromSeed(t, topic, hindi, { researchQuestion: qs[i] || undefined }));
+  return scalePlan(planned, n, topic, hindi, aspectSeeds(s, aspects, hindi));
+}
+
+/** Topic-specific filler titles derived from the subject's requested aspects. */
+function aspectSeeds(subject: string, aspects: string[], hindi: boolean): string[] {
+  const out: string[] = [];
+  for (const a of aspects) {
+    out.push(hindi ? `${subject} में ${a}: गहन अध्ययन` : `${a} in ${subject}: an in-depth study`);
+  }
+  out.push(hindi ? `${subject} के व्यावहारिक और सामाजिक आयाम` : `Practical and social dimensions of ${subject}`);
+  out.push(hindi ? `${subject} के अध्ययन की विधियाँ और स्रोत-परीक्षा` : `Methods and source criticism for studying ${subject}`);
+  return out;
+}
+
 function genericHistoricalPlan(topic: string, n: number, hindi: boolean, analysis: TopicAnalysis): PlannedChapter[] {
-  const short = topic.replace(/\s+/g, " ").trim();
+  if (isPhilosophyTopic(topic)) return philosophyPlan(topic, n, hindi, analysis);
+  const { subject, aspects } = splitTopicAspects(topic);
+  const short = subject;
   const titles = hindi
     ? [
         `${short}: ऐतिहासिक प्रश्न और दायरा`,
@@ -810,13 +905,17 @@ function genericHistoricalPlan(topic: string, n: number, hindi: boolean, analysi
         `Legacy and contemporary readings of ${short}`,
         `${short}: conclusion and further research`,
       ];
+  for (const aspect of aspects) {
+    const t = hindi ? `${short} में ${aspect}` : `${aspect} in ${short}`;
+    if (!titles.some((x) => x.includes(aspect))) titles.push(t);
+  }
   const qs = analysis.researchQuestions || [];
   const planned = titles.map((t, i) =>
     chapterFromSeed(t, topic, hindi, {
       researchQuestion: qs[i] || undefined,
     })
   );
-  return scalePlan(planned, n, topic, hindi);
+  return scalePlan(planned, n, topic, hindi, aspectSeeds(short, aspects, hindi));
 }
 
 export function plannedChaptersForTopic(opts: {
@@ -838,6 +937,8 @@ export function plannedChaptersForTopic(opts: {
   const strategy = STRATEGIES.find((s) => s.match(topic) || s.match(`${topic} ${settings.type}`));
   if (strategy) return hindi ? strategy.hindi(topic, n) : strategy.english(topic, n);
 
+  if (isPhilosophyTopic(topic)) return philosophyPlan(topic, n, hindi, analysis);
+
   const historical =
     analysis.category === "historical" ||
     settings.type === "History Book" ||
@@ -845,7 +946,55 @@ export function plannedChaptersForTopic(opts: {
     /इतिहास|history|historical/i.test(`${topic} ${settings.type}`);
   if (historical) return genericHistoricalPlan(topic, n, hindi, analysis);
 
+  // Categories with curated pedagogy templates keep their templates; every
+  // other subject gets a topic-specific plan so no book ever falls back to
+  // generic titles like "What this subject is and why it matters".
+  const curated = ["programming", "exam", "school", "medical", "legal", "biography", "language"];
+  if (!curated.includes(analysis.category)) return genericSubjectPlan(topic, n, hindi, analysis);
+
   return [];
+}
+
+/**
+ * Topic-specific outline for general/academic subjects — used as the fallback
+ * instead of generic template titles like "What this subject is and why it
+ * matters". Exported for the research pipeline's defaultOutline.
+ */
+export function genericSubjectPlan(topic: string, n: number, hindi: boolean, analysis: TopicAnalysis): PlannedChapter[] {
+  const { subject, aspects } = splitTopicAspects(topic);
+  const s = subject;
+  const titles = hindi
+    ? [
+        `${s} का परिचय, परिभाषा और महत्त्व`,
+        `${s} की पृष्ठभूमि और विकास`,
+        `${s} की मूल अवधारणाएँ और शब्दावली`,
+        `${s} की प्रमुख धाराएँ और दृष्टिकोण`,
+        `${s} से जुड़े प्रमुख व्यक्ति और संस्थाएँ`,
+        `${s} की विधियाँ और प्रक्रियाएँ`,
+        `${s} के अनुप्रयोग और वास्तविक उदाहरण`,
+        `${s} के प्रमाण, स्रोत और उनकी परीक्षा`,
+        `${s}: सीमाएँ, आलोचनाएँ और खुले प्रश्न`,
+        `${s} का समकालीन महत्त्व और आगे की दिशा`,
+      ]
+    : [
+        `Introduction, definition, and significance of ${s}`,
+        `Background and development of ${s}`,
+        `Core concepts and vocabulary of ${s}`,
+        `Major currents and approaches within ${s}`,
+        `Key figures and institutions of ${s}`,
+        `Methods and processes of ${s}`,
+        `Applications and real examples of ${s}`,
+        `Evidence, sources, and their examination for ${s}`,
+        `${s}: limits, critiques, and open questions`,
+        `Contemporary relevance and future directions of ${s}`,
+      ];
+  for (const aspect of aspects) {
+    const t = hindi ? `${s} में ${aspect}` : `${aspect} in ${s}`;
+    if (!titles.some((x) => x.includes(aspect))) titles.push(t);
+  }
+  const qs = analysis.researchQuestions || [];
+  const planned = titles.map((t, i) => chapterFromSeed(t, topic, hindi, { researchQuestion: qs[i] || undefined }));
+  return scalePlan(planned, n, topic, hindi, aspectSeeds(s, aspects, hindi));
 }
 
 export function plannedToOutlineItems(
