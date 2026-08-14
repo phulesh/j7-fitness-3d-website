@@ -6,17 +6,39 @@ import path from "node:path";
 const port = Number(process.env.TEST_PORT || 3199);
 const base = process.env.TEST_BASE_URL || `http://localhost:${port}`;
 let server;
-if (!process.env.TEST_BASE_URL) {
+const testDatabase = path.resolve("data/folio-test.db");
+async function startServer() {
   server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "dev", "-H", "0.0.0.0", "-p", String(port)], {
-    cwd: process.cwd(), env: { ...process.env, NODE_ENV: "development", DATABASE_URL: "file:./data/folio-test.db", AI_API_KEY: "" }, stdio: ["ignore", "pipe", "pipe"]
+    cwd: process.cwd(),
+    env: {
+      ...process.env,
+      NODE_ENV: "development",
+      DATABASE_URL: `file:${testDatabase}`,
+      AI_PROVIDER: "",
+      AI_API_KEY: "",
+      AI_BASE_URL: "",
+      AI_MODEL: "",
+    },
+    stdio: ["ignore", "pipe", "pipe"]
   });
   server.stdout.pipe(process.stdout); server.stderr.pipe(process.stderr);
-  for (let i = 0; i < 120; i++) {
-    try { if ((await fetch(base)).ok) break; } catch {}
+  for (let i = 0; i < 160; i++) {
+    try { if ((await fetch(base)).ok) return; } catch {}
     await new Promise((r) => setTimeout(r, 250));
-    if (i === 119) throw new Error("Test server did not start");
+    if (server.exitCode !== null) throw new Error(`Test server exited (${server.exitCode})`);
   }
+  throw new Error("Test server did not start");
 }
+async function stopServer() {
+  if (!server) return;
+  const child = server;
+  const exited = new Promise((resolve) => child.once("exit", resolve));
+  child.kill("SIGTERM");
+  await Promise.race([exited, new Promise((resolve) => setTimeout(resolve, 5000))]);
+  if (child.exitCode === null) child.kill("SIGKILL");
+  server = undefined;
+}
+if (!process.env.TEST_BASE_URL) await startServer();
 
 class Browser {
   cookie = "";
@@ -33,13 +55,19 @@ class Browser {
 const assert = (condition, message) => { if (!condition) throw new Error(`FAIL: ${message}`); console.log(`PASS: ${message}`); };
 
 try {
-  const suffix = randomUUID().slice(0, 8); const email = `persist-${suffix}@example.com`; const password = "Correct-Horse-1947";
+  const suffix = randomUUID().slice(0, 8);
+  const email = process.env.TEST_ACCOUNT_EMAIL || `persist-${suffix}@example.com`;
+  const password = process.env.TEST_ACCOUNT_PASSWORD || "Correct-Horse-1947";
   const a = new Browser();
   let x = await a.request("/api/auth/register", { method: "POST", body: JSON.stringify({ name: "Persistence Test", email, password }) });
   assert(x.res.status === 200 && x.data.user?.id, "A register creates an account"); const userId = x.data.user.id;
   const duplicate = await new Browser().request("/api/auth/register", { method: "POST", body: JSON.stringify({ name: "Duplicate", email: email.toUpperCase(), password }) });
   assert(duplicate.res.status === 409, "same normalized email cannot create a duplicate account");
+  const preLogoutCookie = a.cookie;
   await a.request("/api/auth/logout", { method: "POST", body: "{}" });
+  const replay = new Browser(); replay.cookie = preLogoutCookie;
+  x = await replay.request("/api/auth/me");
+  assert(x.res.ok && x.data.user === null, "logout revokes the server-side session token");
   x = await a.request("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
   assert(x.res.ok && x.data.user.id === userId, "B/C logout and login restore the same account ID");
 
@@ -54,6 +82,18 @@ try {
   await a.request("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
   x = await a.request("/api/ebooks");
   assert(x.res.ok && x.data.ebooks.some((e) => e.id === ebookId), "F/G/H ebook appears after logout and login");
+
+  if (!process.env.TEST_BASE_URL) {
+    await stopServer();
+    await startServer();
+    const afterRestart = new Browser();
+    x = await afterRestart.request("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+    assert(x.res.ok && x.data.user.id === userId, "application restart preserves the account");
+    x = await afterRestart.request("/api/ebooks");
+    assert(x.res.ok && x.data.ebooks.some((e) => e.id === ebookId), "application restart preserves the ebook");
+    a.cookie = afterRestart.cookie;
+  }
+
   x = await a.request(`/api/ebooks/${ebookId}`);
   assert(x.res.ok, "I owner can open ebook");
   const changed = `Edited ${suffix}`;
@@ -96,6 +136,7 @@ try {
     db.close();
   }
   console.log("PERSISTENCE E2E: ALL PASS");
+  console.log(`AFTER-RESTART INPUT (no password): TEST_ACCOUNT_EMAIL=${email} TEST_EBOOK_ID=${ebookId}`);
 } finally {
-  if (server) server.kill("SIGTERM");
+  await stopServer();
 }

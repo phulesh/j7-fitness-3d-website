@@ -24,11 +24,19 @@ const EMPTY: StoreShape = {
 };
 
 function databasePath() {
-  const configured = process.env.DATABASE_URL || "file:./data/folio.db";
-  if (!configured.startsWith("file:")) {
-    throw new Error("This deployment requires a file: DATABASE_URL. Mount that path on persistent storage; ephemeral serverless filesystems are not supported.");
+  const configured = process.env.DATABASE_URL?.trim();
+  if (process.env.NODE_ENV === "production" && !configured) {
+    throw new Error("DATABASE_URL is required in production and must point to the mounted persistent volume.");
   }
-  const value = configured.slice(5);
+  const selected = configured || "file:./data/folio.db";
+  if (!selected.startsWith("file:")) {
+    throw new Error("This build requires a SQLite file: DATABASE_URL on persistent storage; ephemeral/serverless filesystems are not supported.");
+  }
+  const value = selected.slice(5);
+  if (!value || value === ":memory:") throw new Error("DATABASE_URL cannot use an in-memory database.");
+  if (process.env.NODE_ENV === "production" && !path.isAbsolute(value)) {
+    throw new Error("DATABASE_URL must use an absolute mounted-volume path in production (for Railway: file:/app/data/folio.db with a volume mounted at /app/data).");
+  }
   return path.isAbsolute(value) ? value : path.resolve(process.cwd(), value);
 }
 
