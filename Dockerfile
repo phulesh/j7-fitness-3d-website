@@ -1,5 +1,3 @@
-# syntax=docker/dockerfile:1
-#
 # Folio — production image for Railway.
 #
 # SECURITY: This Dockerfile deliberately declares NO ARG or ENV for any secret
@@ -18,7 +16,6 @@ FROM node:22-slim AS build
 WORKDIR /app
 
 ENV NEXT_TELEMETRY_DISABLED=1
-ENV NPM_CONFIG_UPDATE_NOTIFIER=false
 
 # Install dependencies first for better layer caching. postinstall only
 # creates data directories and the corpus inside the image (never the DB).
