@@ -17,7 +17,5 @@ data/exports
 data/covers
 data/images
 public/generated
-Dockerfile
-.dockerignore
 .vercel
 tsconfig.tsbuildinfo
