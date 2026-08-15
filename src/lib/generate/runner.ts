@@ -14,6 +14,7 @@ import { ACHHOOT_HINDI_TITLES, isAchhootResearchTopic } from "./outline";
 import { augmentAchhootSources } from "./achhoot";
 import { nextSourceId } from "../db";
 import { buildResearchQuality } from "../research/relevance";
+import { assertAIConfigured } from "../ai";
 
 const RESEARCH_TIMEOUT_MS = Number(process.env.RESEARCH_TIMEOUT_MS || 7 * 60 * 1000);
 
@@ -73,6 +74,18 @@ function researchCopy(hindi: boolean) {
     chapter: (n: number, title: string) =>
       hindi ? `अध्याय ${n} पर शोध चल रहा है… ${title}` : `Researching chapter ${n}… ${title}`,
   };
+}
+
+/**
+ * Ebook generation requires server-side AI configuration, with one deliberate
+ * exception: the commissioned Achhoot volume is a fully authored, deterministic
+ * edition composed from bundled canonical content, so it is complete without a
+ * provider. Every other topic must fail loudly rather than publish thin or
+ * empty chapters.
+ */
+function guardAIConfiguration(topic: string | undefined) {
+  if (topic && isAchhootResearchTopic(topic)) return;
+  assertAIConfigured();
 }
 
 const running = new Map<string, Promise<void>>();
@@ -406,6 +419,10 @@ async function generateEbook(
   const doc = getEbook(ebookId);
   if (!doc) throw new Error("Ebook not found");
 
+  // Guard before any research/writing work so a misconfigured server fails
+  // with a precise, actionable message instead of publishing empty chapters.
+  guardAIConfiguration(doc.settings?.topic);
+
   const progress = (step: string, percent: number, message: string, status: EbookDocument["status"], detail?: string) => {
     updateEbook(ebookId, { status, error: undefined, progress: { step, percent, message, detail } });
     updateJob(jobId, { status: "running", step, percent, message });
@@ -575,6 +592,7 @@ export async function continueFromOutline(ebookId: string, jobId: string) {
 async function continueFromOutlineInner(ebookId: string, jobId: string) {
   const doc = getEbook(ebookId);
   if (!doc || !doc.analysis) throw new Error("Research the topic first.");
+  guardAIConfiguration(doc.analysis.topic || doc.settings?.topic);
   if (isAchhootResearchTopic(doc.analysis.topic)) {
     doc.sources = addCanonicalAchhootSources(doc.analysis.topic, doc.sources);
     doc.outline = exactAchhootOutline(doc.analysis.topic, doc.outline);

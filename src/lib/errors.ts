@@ -9,6 +9,13 @@ export function friendlyError(input: { status?: number; message?: string; code?:
   const raw = typeof input === "string" ? input : (input as any)?.message || "";
   const message = String(raw || "");
 
+  // Server misconfiguration must stay verbatim. Collapsing it into a generic
+  // "temporarily unavailable, please retry" would hide the real cause and make
+  // a missing AI key look like a transient blip the user can retry away.
+  if (/\bAI (is|generation is) not configured\b|Missing required server environment variable|AI_PROVIDER, AI_API_KEY, AI_BASE_URL, AI_MODEL/i.test(message)) {
+    return message;
+  }
+
   if (status === 502 || status === 503 || status === 504 || /502|503|504|bad gateway|gateway timeout/i.test(message)) {
     return "Research service temporarily unavailable. Your ebook data has been saved. Please retry.";
   }

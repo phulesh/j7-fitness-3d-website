@@ -20,7 +20,10 @@
     "test:vedanta": "NODE_OPTIONS=--conditions=react-server npx --yes tsx src/lib/vedanta-pipeline-selftest.ts",
     "postinstall": "node scripts/ensure-dirs.js && node scripts/seed-corpus.mjs",
     "test:ai:real": "NODE_OPTIONS=--conditions=react-server tsx scripts/ai-provider-integration.ts",
-    "test:persistence:after-restart": "node scripts/persistence-after-restart.mjs"
+    "test:persistence:after-restart": "node scripts/persistence-after-restart.mjs",
+    "test:ai:config": "NODE_OPTIONS=--conditions=react-server tsx src/lib/ai-config-selftest.ts",
+    "test:ai:missing": "node scripts/ai-missing-config-e2e.mjs",
+    "test:ai:health": "node scripts/ai-health-check.mjs"
   },
   "dependencies": {
     "@react-three/drei": "^9.120.4",
