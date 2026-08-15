@@ -22,6 +22,7 @@
     "test:ai:real": "NODE_OPTIONS=--conditions=react-server tsx scripts/ai-provider-integration.ts",
     "test:persistence:after-restart": "node scripts/persistence-after-restart.mjs",
     "test:ai:config": "NODE_OPTIONS=--conditions=react-server tsx src/lib/ai-config-selftest.ts",
+    "test:ai:ratelimit": "NODE_OPTIONS=--conditions=react-server tsx src/lib/ai-rate-limit-selftest.ts",
     "test:ai:missing": "node scripts/ai-missing-config-e2e.mjs",
     "test:ai:health": "node scripts/ai-health-check.mjs"
   },
