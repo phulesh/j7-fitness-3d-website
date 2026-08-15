@@ -171,21 +171,38 @@ export async function pingAI(): Promise<{ ok: boolean; status: AIStatus; latency
 export interface ChatMessage { role: "system" | "user" | "assistant"; content: string; }
 export interface ChatOptions { temperature?: number; maxTokens?: number; retries?: number }
 
+// Default retry configuration for AI requests
+const DEFAULT_RETRIES = 3;
+const RETRY_DELAY_BASE_MS = 1000; // 1 second base delay
+const RETRY_DELAY_MAX_MS = 30000; // 30 seconds max delay
+
 export async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
   // Throws AIProviderError(503) with the exact missing variable names when the
   // server is not configured. Callers must never swallow this into empty text.
   const config = getAIConfig();
-  const attempts = Math.max(1, opts.retries ?? 3);
+  const attempts = Math.max(1, opts.retries ?? DEFAULT_RETRIES);
   let lastError: unknown;
+  
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
-      const value = config.wireFormat === "anthropic" ? await anthropicChat(config, messages, opts) : await compatibleChat(config, messages, opts);
+      const value = config.wireFormat === "anthropic" 
+        ? await anthropicChat(config, messages, opts) 
+        : await compatibleChat(config, messages, opts);
       if (!value.trim()) throw new AIProviderError("The configured AI provider returned empty content.");
       return value;
     } catch (error) {
       lastError = error;
       if (error instanceof AIProviderError && error.status < 500) break;
-      if (attempt < attempts - 1) await new Promise((resolve) => setTimeout(resolve, 700 * 2 ** attempt));
+      if (attempt < attempts - 1) {
+        // Exponential backoff with jitter
+        const delay = Math.min(
+          RETRY_DELAY_BASE_MS * Math.pow(2, attempt) + Math.random() * 100,
+          RETRY_DELAY_MAX_MS
+        );
+        console.log(`AI request failed (attempt ${attempt + 1}/${attempts}), retrying in ${delay}ms:`, 
+          error instanceof Error ? safeProviderDetail(error.message, config.apiKey) : 'Unknown error');
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
     }
   }
   if (lastError instanceof AIProviderError) throw lastError;
@@ -202,31 +219,65 @@ function safeProviderDetail(raw: string, apiKey: string): string {
 }
 
 async function request(url: string, init: RequestInit, apiKey: string) {
-  const ctrl = new AbortController(); const timer = setTimeout(() => ctrl.abort(), 90_000);
+  const ctrl = new AbortController(); 
+  const timer = setTimeout(() => ctrl.abort(), 90_000);
   try {
     const response = await fetch(url, { ...init, signal: ctrl.signal });
     if (!response.ok) {
       const detail = safeProviderDetail(await response.text(), apiKey);
-      throw new AIProviderError(`AI provider request failed (${response.status})${detail ? `: ${detail}` : ""}`, response.status >= 500 || response.status === 429 ? 502 : 400);
+      const statusText = response.statusText || `HTTP ${response.status}`;
+      throw new AIProviderError(
+        `AI provider request failed (${response.status}): ${statusText}${detail ? `: ${detail}` : ""}`,
+        response.status >= 500 || response.status === 429 ? 502 : 400
+      );
     }
     return response;
   } catch (error) {
     if (error instanceof AIProviderError) throw error;
-    throw new AIProviderError(error instanceof Error && error.name === "AbortError" ? "AI provider timed out." : "Could not reach the configured AI provider.");
+    const errorMessage = error instanceof Error ? error.message : "Unknown error";
+    if (errorMessage.includes("AbortError") || errorMessage.includes("timeout")) {
+      throw new AIProviderError("AI provider timed out.");
+    }
+    throw new AIProviderError(`Could not reach the configured AI provider: ${errorMessage}`);
   } finally { clearTimeout(timer); }
 }
 
 async function compatibleChat(config: AIConfig, messages: ChatMessage[], opts: ChatOptions) {
-  const res = await request(`${config.baseUrl}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json" },
-    body: JSON.stringify({ model: config.model, temperature: opts.temperature ?? 0.35, max_tokens: opts.maxTokens ?? 3500, messages }) }, config.apiKey);
+  const res = await request(`${config.baseUrl}/chat/completions`, { 
+    method: "POST", 
+    headers: { 
+      Authorization: `Bearer ${config.apiKey}`, 
+      "Content-Type": "application/json" 
+    },
+    body: JSON.stringify({ 
+      model: config.model, 
+      temperature: opts.temperature ?? 0.35, 
+      max_tokens: opts.maxTokens ?? 3500, 
+      messages 
+    }) 
+  }, config.apiKey);
   const data = await res.json() as { choices?: { message?: { content?: string } }[] };
   return data.choices?.[0]?.message?.content || "";
 }
+
 async function anthropicChat(config: AIConfig, messages: ChatMessage[], opts: ChatOptions) {
   const system = messages.find((m) => m.role === "system")?.content || "";
   const rest = messages.filter((m) => m.role !== "system");
-  const res = await request(`${config.baseUrl}/messages`, { method: "POST", headers: { "x-api-key": config.apiKey, "anthropic-version": "2023-06-01", "Content-Type": "application/json" },
-    body: JSON.stringify({ model: config.model, max_tokens: opts.maxTokens ?? 3500, temperature: opts.temperature ?? 0.35, system, messages: rest.map((m) => ({ role: m.role, content: m.content })) }) }, config.apiKey);
+  const res = await request(`${config.baseUrl}/messages`, { 
+    method: "POST", 
+    headers: { 
+      "x-api-key": config.apiKey, 
+      "anthropic-version": "2023-06-01", 
+      "Content-Type": "application/json" 
+    },
+    body: JSON.stringify({ 
+      model: config.model, 
+      max_tokens: opts.maxTokens ?? 3500, 
+      temperature: opts.temperature ?? 0.35, 
+      system, 
+      messages: rest.map((m) => ({ role: m.role, content: m.content })) 
+    }) 
+  }, config.apiKey);
   const data = await res.json() as { content?: { text?: string }[] };
   return data.content?.map((c) => c.text || "").join("\n") || "";
 }

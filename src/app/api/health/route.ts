@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import path from "path";
-import { getAIStatus, pingAI } from "@/lib/ai";
+import { getAIStatus, pingAI, getAIConfig, AIProviderError } from "@/lib/ai";
 import { dataDir, getDatabase, getDatabasePath } from "@/lib/db";
 
 export const runtime = "nodejs";
@@ -30,7 +30,7 @@ export async function GET(req: Request) {
     const onVolume = dbPath === root || dbPath.startsWith(root + path.sep);
     persistent = path.isAbsolute(dbPath) && onVolume;
     database = persistent ? "configured" : "not-persistent-production-config";
-  } catch {
+  } catch (error) {
     database = "unavailable";
   }
 
@@ -43,23 +43,47 @@ export async function GET(req: Request) {
     endpoint: status.endpoint,
     wireFormat: status.wireFormat,
   };
+  
+  // Add missing variables if not configured
   if (!status.configured) {
     ai.missing = status.missing;
     ai.reason = status.reason;
   }
 
   let probeOk = true;
+  let probeError: string | undefined;
+  let probeLatencyMs = 0;
+  
   if (probeAi) {
-    const probe = await pingAI();
-    probeOk = probe.ok;
-    ai.status = probe.ok ? "healthy" : status.configured ? "unhealthy" : "not-configured";
-    ai.probe = { ok: probe.ok, latencyMs: probe.latencyMs, ...(probe.error ? { error: probe.error } : {}) };
+    try {
+      const probe = await pingAI();
+      probeOk = probe.ok;
+      probeLatencyMs = probe.latencyMs;
+      probeError = probe.error;
+      ai.status = probe.ok ? "healthy" : status.configured ? "unhealthy" : "not-configured";
+      ai.probe = { 
+        ok: probe.ok, 
+        latencyMs: probe.latencyMs, 
+        ...(probe.error ? { error: probe.error } : {}) 
+      };
+      
+      // If configured but not healthy, add detailed error
+      if (status.configured && !probe.ok && probe.error) {
+        ai.error = probe.error;
+      }
+    } catch (error) {
+      probeOk = false;
+      probeError = error instanceof Error ? error.message : "AI probe failed";
+      ai.status = status.configured ? "unhealthy" : "not-configured";
+      ai.probe = { ok: false, error: probeError };
+    }
   }
 
   // `ok` reflects deployment readiness (persistent database) so a missing AI
   // key never takes the whole service out of Railway's healthcheck rotation.
   // Only the explicit ?probe=ai form additionally requires a live provider.
   const ok = persistent && probeOk;
+  
   return NextResponse.json(
     {
       ok,
