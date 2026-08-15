@@ -17,9 +17,12 @@ WORKDIR /app
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
-# Install dependencies first for better layer caching. postinstall only
-# creates data directories and the corpus inside the image (never the DB).
+# Install dependencies first for better layer caching. npm ci runs the
+# package postinstall, so both postinstall entrypoints must be present before
+# this layer executes. These scripts only create directories and seed JSON
+# corpus files; they never open or initialize SQLite.
 COPY package.json package-lock.json ./
+COPY scripts/ensure-dirs.js scripts/seed-corpus.mjs ./scripts/
 RUN npm ci
 
 # Compile the application. No secrets and no database are needed here.
