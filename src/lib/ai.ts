@@ -14,7 +14,26 @@ export type AIWireFormat = "openai-compatible" | "anthropic";
 export type AIProviderName = string;
 
 export class AIProviderError extends Error {
-  constructor(message: string, public readonly status = 502) { super(message); this.name = "AIProviderError"; }
+  /**
+   * @param status       Actual HTTP status from the provider when known
+   *                     (429, 500, ...), or a service status (502/503) for
+   *                     local failures such as timeouts or missing config.
+   * @param retryAfterMs Optional provider-issued Retry-After value in ms.
+   *                     Retryability is derived from `status` (429 or >= 500).
+   */
+  constructor(
+    message: string,
+    public readonly status = 502,
+    public readonly retryAfterMs?: number
+  ) {
+    super(message);
+    this.name = "AIProviderError";
+  }
+
+  /** 429 or 5xx responses are transient and safe to retry with backoff. */
+  get retryable(): boolean {
+    return this.status === 429 || this.status >= 500;
+  }
 }
 
 export interface AIConfig {
@@ -156,7 +175,7 @@ export async function pingAI(): Promise<{ ok: boolean; status: AIStatus; latency
       ],
       { temperature: 0, maxTokens: 16, retries: 1 }
     );
-    if (!reply.trim()) throw new AIProviderError("The configured AI provider returned empty content.");
+    if (!reply.trim()) throw new AIProviderError("The configured AI provider returned empty content.", 422);
     return { ok: true, status, latencyMs: Date.now() - started };
   } catch (error) {
     return {
@@ -171,38 +190,108 @@ export async function pingAI(): Promise<{ ok: boolean; status: AIStatus; latency
 export interface ChatMessage { role: "system" | "user" | "assistant"; content: string; }
 export interface ChatOptions { temperature?: number; maxTokens?: number; retries?: number }
 
-// Default retry configuration for AI requests
+/**
+ * Retry / rate-limit tuning (server-side only, production-safe).
+ *
+ * Concurrency is globally capped at 1: no two provider requests are ever in
+ * flight at once, so simultaneous ebook generations (or a health probe
+ * overlapping a generation) can never stampede the provider into a 429.
+ * Retries are hard-bounded so a misbehaving provider can never loop forever.
+ */
 const DEFAULT_RETRIES = 3;
-const RETRY_DELAY_BASE_MS = 1000; // 1 second base delay
-const RETRY_DELAY_MAX_MS = 30000; // 30 seconds max delay
+const MAX_RETRIES = 8; // absolute ceiling — never retry more than this
+const RETRY_DELAY_BASE_MS = 1000;
+const RETRY_DELAY_MAX_MS = 60_000;
+// Minimum gap between consecutive AI requests. Optional server-side tuning
+// knob (default 1000ms); never a NEXT_PUBLIC_ variable.
+const AI_MIN_REQUEST_INTERVAL_MS = Number(process.env.AI_MIN_REQUEST_INTERVAL_MS) > 0
+  ? Number(process.env.AI_MIN_REQUEST_INTERVAL_MS)
+  : 1000;
+const AI_REQUEST_TIMEOUT_MS = 90_000;
+
+// Serializes every provider call through a single promise chain (concurrency 1).
+let aiQueue: Promise<unknown> = Promise.resolve();
+let lastRequestAt = 0;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Run `task` as the one-and-only in-flight AI request. Every chat() call
+ * funnels through this, guaranteeing (a) concurrency of exactly 1 and (b) at
+ * least MIN_REQUEST_INTERVAL_MS between the start of consecutive requests.
+ */
+function withAISlot<T>(task: () => Promise<T>): Promise<T> {
+  const run = aiQueue.then(async () => {
+    const now = Date.now();
+    const since = now - lastRequestAt;
+    if (since < AI_MIN_REQUEST_INTERVAL_MS) await sleep(AI_MIN_REQUEST_INTERVAL_MS - since);
+    lastRequestAt = Date.now();
+    return task();
+  });
+  // Keep the chain alive even when a task rejects, so a single failure never
+  // poisons serialization for subsequent requests.
+  aiQueue = run.then(() => undefined, () => undefined);
+  return run;
+}
+
+/** Parse a Retry-After header (delta-seconds or HTTP-date) into milliseconds. */
+function parseRetryAfterMs(header: string | null | undefined, now = Date.now()): number | undefined {
+  if (!header) return undefined;
+  const value = header.trim();
+  if (!value) return undefined;
+  if (/^\d+$/.test(value)) {
+    const seconds = Number(value);
+    return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : undefined;
+  }
+  const date = Date.parse(value);
+  if (!Number.isNaN(date)) return Math.max(0, date - now);
+  return undefined;
+}
+
+/** Next backoff delay: full jitter, or the provider's Retry-After when given. */
+function backoffDelayMs(error: unknown, attempt: number): number {
+  const retryAfter = error instanceof AIProviderError ? error.retryAfterMs : undefined;
+  if (typeof retryAfter === "number" && Number.isFinite(retryAfter) && retryAfter > 0) {
+    // Respect the provider's instruction, but cap it so a hostile or buggy
+    // Retry-After value can never stall generation indefinitely.
+    return Math.min(retryAfter, RETRY_DELAY_MAX_MS);
+  }
+  const cap = Math.min(RETRY_DELAY_MAX_MS, RETRY_DELAY_BASE_MS * Math.pow(2, attempt));
+  return Math.floor(Math.random() * cap); // full jitter
+}
 
 export async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
   // Throws AIProviderError(503) with the exact missing variable names when the
   // server is not configured. Callers must never swallow this into empty text.
   const config = getAIConfig();
-  const attempts = Math.max(1, opts.retries ?? DEFAULT_RETRIES);
+  const requested = opts.retries ?? DEFAULT_RETRIES;
+  const attempts = Math.min(MAX_RETRIES, Math.max(1, requested));
   let lastError: unknown;
-  
+
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
-      const value = config.wireFormat === "anthropic" 
-        ? await anthropicChat(config, messages, opts) 
-        : await compatibleChat(config, messages, opts);
-      if (!value.trim()) throw new AIProviderError("The configured AI provider returned empty content.");
+      const value = await withAISlot(() =>
+        config.wireFormat === "anthropic"
+          ? anthropicChat(config, messages, opts)
+          : compatibleChat(config, messages, opts)
+      );
+      if (!value.trim()) throw new AIProviderError("The configured AI provider returned empty content.", 422);
       return value;
     } catch (error) {
       lastError = error;
-      if (error instanceof AIProviderError && error.status < 500) break;
-      if (attempt < attempts - 1) {
-        // Exponential backoff with jitter
-        const delay = Math.min(
-          RETRY_DELAY_BASE_MS * Math.pow(2, attempt) + Math.random() * 100,
-          RETRY_DELAY_MAX_MS
-        );
-        console.log(`AI request failed (attempt ${attempt + 1}/${attempts}), retrying in ${delay}ms:`, 
-          error instanceof Error ? safeProviderDetail(error.message, config.apiKey) : 'Unknown error');
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
+      // Retry only transient failures (429 / 5xx / network). Auth errors,
+      // missing config, and empty responses fail fast without wasting quota.
+      if (!(error instanceof AIProviderError && error.retryable) || attempt === attempts - 1) break;
+      const delay = backoffDelayMs(error, attempt);
+      const retryAfterNote =
+        error.retryAfterMs != null ? ` (Retry-After ${Math.round(error.retryAfterMs)}ms)` : "";
+      console.warn(
+        `AI request failed (attempt ${attempt + 1}/${attempts})${retryAfterNote}, retrying in ${Math.round(delay)}ms:`,
+        error instanceof Error ? safeProviderDetail(error.message, config.apiKey) : "Unknown error"
+      );
+      await sleep(delay);
     }
   }
   if (lastError instanceof AIProviderError) throw lastError;
@@ -220,15 +309,18 @@ function safeProviderDetail(raw: string, apiKey: string): string {
 
 async function request(url: string, init: RequestInit, apiKey: string) {
   const ctrl = new AbortController(); 
-  const timer = setTimeout(() => ctrl.abort(), 90_000);
+  const timer = setTimeout(() => ctrl.abort(), AI_REQUEST_TIMEOUT_MS);
   try {
     const response = await fetch(url, { ...init, signal: ctrl.signal });
     if (!response.ok) {
       const detail = safeProviderDetail(await response.text(), apiKey);
       const statusText = response.statusText || `HTTP ${response.status}`;
+      // Preserve the real status (e.g. 429) so the retry loop can apply
+      // 429/5xx backoff, and carry any Retry-After the provider supplied.
       throw new AIProviderError(
         `AI provider request failed (${response.status}): ${statusText}${detail ? `: ${detail}` : ""}`,
-        response.status >= 500 || response.status === 429 ? 502 : 400
+        response.status,
+        parseRetryAfterMs(response.headers.get("retry-after"))
       );
     }
     return response;
