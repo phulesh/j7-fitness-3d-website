@@ -14,7 +14,7 @@ import { ACHHOOT_HINDI_TITLES, isAchhootResearchTopic } from "./outline";
 import { augmentAchhootSources } from "./achhoot";
 import { nextSourceId } from "../db";
 import { buildResearchQuality } from "../research/relevance";
-import { assertAIConfigured } from "../ai";
+import { assertAIConfigured, aiConfigured, getAIConfig, AIProviderError } from "../ai";
 
 const RESEARCH_TIMEOUT_MS = Number(process.env.RESEARCH_TIMEOUT_MS || 7 * 60 * 1000);
 
@@ -121,7 +121,7 @@ export function startGeneration(
           step: "failed",
           percent: saved?.progress?.percent || 0,
           message: "Generation interrupted. Your ebook data has been saved. Resume generation.",
-          detail: message,
+          detail: raw.length > 500 ? raw.slice(0, 500) + "..." : raw,
         },
       });
       updateJob(jobId, {
@@ -399,7 +399,7 @@ async function researchEbook(
       message: blocked ? blockMsg : copy.done,
       detail: hindi
         ? `शोध गुणवत्ता: ${bundle.researchQuality.relevantCount} स्वीकृत / ${bundle.researchQuality.rejectedCount} अस्वीकृत`
-        : `Research Quality: ${bundle.researchQuality.relevantCount} relevant / ${bundle.researchQuality.rejectedCount} rejected`,
+        : `Research Quality: ${bundle.researchQuality.relevantCount} relevant sources / ${bundle.researchQuality.rejectedCount} rejected`,
     },
   });
   updateJob(jobId, {
@@ -573,16 +573,19 @@ export async function continueFromOutline(ebookId: string, jobId: string) {
     .catch((err) => {
       console.error("continueFromOutline failed", err);
       const saved = getEbook(ebookId);
+      const raw = err instanceof Error ? err.message : "Generation interrupted.";
+      const message = friendlyError(raw);
       updateEbook(ebookId, {
         status: "failed",
-        error: friendlyError(err instanceof Error ? err.message : "Generation interrupted."),
+        error: message,
         progress: {
           step: "failed",
           percent: saved?.progress?.percent || 0,
           message: "Generation interrupted. Your ebook data has been saved. Resume generation.",
+          detail: raw.length > 500 ? raw.slice(0, 500) + "..." : raw,
         },
       });
-      updateJob(jobId, { status: "failed", message: "Generation interrupted. Resume generation." });
+      updateJob(jobId, { status: "failed", message: "Generation interrupted. Resume generation.", error: message });
     })
     .finally(() => running.delete(ebookId));
   running.set(ebookId, p);
@@ -667,12 +670,20 @@ async function writeRemaining(doc: EbookDocument, jobId: string) {
   const topic = doc.analysis?.topic || doc.settings.topic;
   const canonicalSources = addCanonicalAchhootSources(topic, doc.sources);
   const outline = exactAchhootOutline(topic, doc.outline);
+  
+  // Update progress to show we're resuming
   updateEbook(doc.id, {
     status: "writing",
     sources: canonicalSources,
     outline,
-    progress: { step: "writing", percent: 50, message: "Resuming from last completed chapter..." },
+    lastCompletedStage: "writing",
+    progress: { 
+      step: "writing", 
+      percent: 50 + Math.round((start / Math.max(1, outline.length)) * 40), 
+      message: `Resuming from chapter ${start + 1} of ${outline.length}...` 
+    },
   });
+  
   const bundle = {
     sources: canonicalSources,
     facts: doc.facts || [],
@@ -680,6 +691,8 @@ async function writeRemaining(doc: EbookDocument, jobId: string) {
     images: [] as never[],
     insufficient: false,
   } as any;
+  
+  // Write chapters starting from the failed one
   await writeChapters({ ...doc, sources: canonicalSources, outline }, jobId, bundle, start);
 }
 
@@ -690,11 +703,15 @@ async function writeChapters(doc: EbookDocument, jobId: string, bundle: any, sta
 
   for (let i = startIndex; i < outline.length; i++) {
     const item = outline[i];
+    
+    // Update progress for this chapter
+    const chapterPercent = 48 + Math.round((i / Math.max(1, outline.length)) * 36);
     updateEbook(doc.id, {
       status: "writing",
+      lastCompletedStage: "writing",
       progress: {
         step: "writing",
-        percent: 48 + Math.round((i / Math.max(1, outline.length)) * 36),
+        percent: chapterPercent,
         message: "Writing chapters...",
         detail: `Chapter ${i + 1} of ${outline.length}: ${item.title}`,
       },
@@ -702,7 +719,7 @@ async function writeChapters(doc: EbookDocument, jobId: string, bundle: any, sta
     updateJob(jobId, {
       status: "running",
       step: "writing",
-      percent: 48 + Math.round((i / Math.max(1, outline.length)) * 36),
+      percent: chapterPercent,
       message: `Writing chapter ${i + 1}`,
       lastChapterIndex: i - 1,
     });
@@ -711,37 +728,89 @@ async function writeChapters(doc: EbookDocument, jobId: string, bundle: any, sta
       updateEbook(doc.id, {
         status: "paused",
         chapters,
-        progress: { step: "paused", percent: 50, message: "Writing cancelled. Completed chapters were saved." },
+        progress: { step: "paused", percent: chapterPercent, message: "Writing cancelled. Completed chapters were saved." },
       });
       updateJob(jobId, { status: "paused", message: "Cancelled", lastChapterIndex: i - 1 });
       return;
     }
 
-    let extraImages = i === 0 ? bundle.images || [] : [];
-    if (doc.settings.includeImages && (!extraImages.length || i > 0)) {
-      extraImages = await maybeChapterImages(`${doc.title} ${item.title}`, true);
-    }
-    const visuals = await buildChapterVisuals({
-      ebookId: doc.id,
-      chapterIndex: i,
-      item,
-      lang: doc.analysis.outputLanguage || doc.language,
-      commons: extraImages,
-      includeImages: Boolean(doc.settings.includeImages),
-    });
+    try {
+      let extraImages = i === 0 ? bundle.images || [] : [];
+      if (doc.settings.includeImages && (!extraImages.length || i > 0)) {
+        extraImages = await maybeChapterImages(`${doc.title} ${item.title}`, true);
+      }
+      const visuals = await buildChapterVisuals({
+        ebookId: doc.id,
+        chapterIndex: i,
+        item,
+        lang: doc.analysis.outputLanguage || doc.language,
+        commons: extraImages,
+        includeImages: Boolean(doc.settings.includeImages),
+      });
 
-    const ch = await writeChapter({
-      index: i,
-      item,
-      settings: doc.settings,
-      analysis: doc.analysis,
-      bundle: { ...bundle, images: visuals },
-      total: outline.length,
-    });
-    insertFiguresIntoChapter(ch, doc.analysis.outputLanguage || doc.language);
-    ch.factFlags = flagsFromFacts(bundle.facts || [], chapterPlain(ch));
-    chapters[i] = ch;
-    saveChapter(doc.id, ch);
+      const ch = await writeChapter({
+        index: i,
+        item,
+        settings: doc.settings,
+        analysis: doc.analysis,
+        bundle: { ...bundle, images: visuals },
+        total: outline.length,
+      });
+      insertFiguresIntoChapter(ch, doc.analysis.outputLanguage || doc.language);
+      ch.factFlags = flagsFromFacts(bundle.facts || [], chapterPlain(ch));
+      chapters[i] = ch;
+      
+      // Save chapter transactionally BEFORE moving to next
+      saveChapter(doc.id, ch);
+      
+      // Update progress with completed chapter
+      updateEbook(doc.id, {
+        chapters,
+        lastCompletedStage: "writing",
+        progress: {
+          step: "writing",
+          percent: chapterPercent + 1,
+          message: `Completed chapter ${i + 1} of ${outline.length}`,
+          detail: `Saved: ${item.title}`,
+        },
+      });
+      updateJob(jobId, {
+        status: "running",
+        step: "writing",
+        percent: chapterPercent + 1,
+        message: `Completed chapter ${i + 1}`,
+        lastChapterIndex: i,
+      });
+      
+    } catch (error) {
+      // Handle chapter writing failure
+      console.error(`Failed to write chapter ${i + 1} (${item.title}):`, error);
+      
+      const rawError = error instanceof Error ? error.message : "Chapter generation failed";
+      const friendlyMsg = friendlyError(rawError);
+      
+      // Save all completed chapters before failing
+      updateEbook(doc.id, {
+        chapters,
+        status: "failed",
+        error: friendlyMsg,
+        lastCompletedStage: "writing",
+        progress: {
+          step: "failed",
+          percent: chapterPercent,
+          message: `Chapter ${i + 1} failed. Your ebook data has been saved. Resume to retry this chapter.`,
+          detail: rawError.length > 500 ? rawError.slice(0, 500) + "..." : rawError,
+        },
+      });
+      updateJob(jobId, {
+        status: "failed",
+        error: friendlyMsg,
+        message: `Failed at chapter ${i + 1}. Resume to continue.`,
+        lastChapterIndex: i - 1,
+      });
+      
+      throw error; // Re-throw to stop the loop
+    }
   }
 
   updateEbook(doc.id, {
@@ -749,7 +818,7 @@ async function writeChapters(doc: EbookDocument, jobId: string, bundle: any, sta
     progress: { step: "fact_checking", percent: 88, message: "Fact checking..." },
     chapters,
   });
-  updateJob(jobId, { status: "running", step: "fact_checking", percent: 88, message: "Fact checking..." });
+  updateJob(jobId, { status: "running", step: "fact_checking", percent: 88, message: "Fact checking...", lastChapterIndex: chapters.length - 1 });
 
   const matter = await writeFrontMatter({
     settings: doc.settings,
@@ -817,34 +886,61 @@ async function writeChapters(doc: EbookDocument, jobId: string, bundle: any, sta
   });
   updateJob(jobId, { status: "running", step: "generating_figures", percent: 84, message: "Generating figures", lastChapterIndex: chapters.length - 1 });
 
-  const final = await runFinalQualityCheck(doc.id, (stage, percent, message) => {
-    updateEbook(doc.id, { status: "exporting", progress: { step: stage, percent, message } });
-    updateJob(jobId, { status: "running", step: stage, percent, message, lastChapterIndex: chapters.length - 1 });
-  });
+  try {
+    const final = await runFinalQualityCheck(doc.id, (stage, percent, message) => {
+      updateEbook(doc.id, { status: "exporting", progress: { step: stage, percent, message } });
+      updateJob(jobId, { status: "running", step: stage, percent, message, lastChapterIndex: chapters.length - 1 });
+    });
 
-  // READY is allowed ONLY when the central publishing gate has passed.
-  // runFinalQualityCheck throws when any critical check fails, and it also
-  // persists the publishGate report; re-assert here so a book can never be
-  // shown as successful while its content is empty or incomplete.
-  const gated = getEbook(doc.id);
-  if (!gated?.publishGate?.valid) {
-    const reasons = gated?.publishGate?.errors?.slice(0, 5).join("; ") || "Publishing gate did not pass.";
-    throw new Error(`Book failed the final publishing gate: ${reasons}`);
+    // READY is allowed ONLY when the central publishing gate has passed.
+    // runFinalQualityCheck throws when any critical check fails, and it also
+    // persists the publishGate report; re-assert here so a book can never be
+    // shown as successful while its content is empty or incomplete.
+    const gated = getEbook(doc.id);
+    if (!gated?.publishGate?.valid) {
+      const reasons = gated?.publishGate?.errors?.slice(0, 5).join("; ") || "Publishing gate did not pass.";
+      throw new Error(`Book failed the final publishing gate: ${reasons}`);
+    }
+    const finalWordCount =
+      gated.publishGate.stats.words ||
+      countWords(gated.introduction + " " + gated.conclusion) + gated.chapters.reduce((n, c) => n + (c?.wordCount || 0), 0);
+
+    updateEbook(doc.id, {
+      status: "complete",
+      lastCompletedStage: "complete",
+      qualityReport: final.report,
+      exports: final.exports,
+      wordCount: finalWordCount,
+      progress: { step: "complete", percent: 100, message: "Book ready" },
+      error: undefined,
+    });
+    updateJob(jobId, { status: "complete", step: "complete", percent: 100, message: "Ready", lastChapterIndex: chapters.length - 1 });
+  } catch (error) {
+    // Handle quality check failure
+    console.error("Final quality check failed:", error);
+    const rawError = error instanceof Error ? error.message : "Quality check failed";
+    const friendlyMsg = friendlyError(rawError);
+    
+    updateEbook(doc.id, {
+      status: "failed",
+      error: friendlyMsg,
+      lastCompletedStage: "quality",
+      progress: {
+        step: "failed",
+        percent: 95,
+        message: "Quality check failed. Your ebook data has been saved.",
+        detail: rawError.length > 500 ? rawError.slice(0, 500) + "..." : rawError,
+      },
+    });
+    updateJob(jobId, {
+      status: "failed",
+      error: friendlyMsg,
+      message: "Quality check failed. Resume to retry.",
+      lastChapterIndex: chapters.length - 1,
+    });
+    
+    throw error;
   }
-  const finalWordCount =
-    gated.publishGate.stats.words ||
-    countWords(gated.introduction + " " + gated.conclusion) + gated.chapters.reduce((n, c) => n + (c?.wordCount || 0), 0);
-
-  updateEbook(doc.id, {
-    status: "complete",
-    lastCompletedStage: "complete",
-    qualityReport: final.report,
-    exports: final.exports,
-    wordCount: finalWordCount,
-    progress: { step: "complete", percent: 100, message: "Book ready" },
-    error: undefined,
-  });
-  updateJob(jobId, { status: "complete", step: "complete", percent: 100, message: "Ready", lastChapterIndex: chapters.length - 1 });
 }
 
 export async function regenerateChapter(ebookId: string, chapterIndex: number, instruction?: string) {
@@ -925,5 +1021,4 @@ export function regenerateOutlineForEbook(ebookId: string) {
   });
   return getEbook(ebookId);
 }
-
 
