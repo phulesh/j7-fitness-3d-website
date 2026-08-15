@@ -196,22 +196,17 @@ export interface ChatOptions { temperature?: number; maxTokens?: number; retries
  * Concurrency is globally capped at 1: no two provider requests are ever in
  * flight at once, so simultaneous ebook generations (or a health probe
  * overlapping a generation) can never stampede the provider into a 429.
- * Retries are hard-bounded so a misbehaving provider can never loop forever.
+ * Retries for 429 are hard-bounded to a max of 3 attempts with exponential backoff and jitter.
  */
 const DEFAULT_RETRIES = 3;
-const MAX_RETRIES = 8; // absolute ceiling — never retry more than this
-const RETRY_DELAY_BASE_MS = 1000;
+const MAX_RETRIES = 3; // hard limit: max 3 retries (3 total attempts) for rate limits
+const RETRY_DELAY_BASE_MS = 2000;
 const RETRY_DELAY_MAX_MS = 60_000;
-// Minimum gap between consecutive AI requests. Optional server-side tuning
-// knob (default 1000ms); never a NEXT_PUBLIC_ variable.
-const AI_MIN_REQUEST_INTERVAL_MS = Number(process.env.AI_MIN_REQUEST_INTERVAL_MS) > 0
-  ? Number(process.env.AI_MIN_REQUEST_INTERVAL_MS)
-  : 1000;
 const AI_REQUEST_TIMEOUT_MS = 90_000;
 
 // Serializes every provider call through a single promise chain (concurrency 1).
 let aiQueue: Promise<unknown> = Promise.resolve();
-let lastRequestAt = 0;
+let lastRequestEndedAt = 0;
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -220,15 +215,24 @@ function sleep(ms: number): Promise<void> {
 /**
  * Run `task` as the one-and-only in-flight AI request. Every chat() call
  * funnels through this, guaranteeing (a) concurrency of exactly 1 and (b) at
- * least MIN_REQUEST_INTERVAL_MS between the start of consecutive requests.
+ * least MIN_REQUEST_INTERVAL_MS between the completion of a request and the start
+ * of the next request.
  */
 function withAISlot<T>(task: () => Promise<T>): Promise<T> {
   const run = aiQueue.then(async () => {
+    const minInterval = Number(process.env.AI_MIN_REQUEST_INTERVAL_MS) > 0
+      ? Number(process.env.AI_MIN_REQUEST_INTERVAL_MS)
+      : 5000; // Increased default minimum request interval to 5000ms
     const now = Date.now();
-    const since = now - lastRequestAt;
-    if (since < AI_MIN_REQUEST_INTERVAL_MS) await sleep(AI_MIN_REQUEST_INTERVAL_MS - since);
-    lastRequestAt = Date.now();
-    return task();
+    const since = now - lastRequestEndedAt;
+    if (since < minInterval) {
+      await sleep(minInterval - since);
+    }
+    try {
+      return await task();
+    } finally {
+      lastRequestEndedAt = Date.now();
+    }
   });
   // Keep the chain alive even when a task rejects, so a single failure never
   // poisons serialization for subsequent requests.
@@ -250,16 +254,17 @@ function parseRetryAfterMs(header: string | null | undefined, now = Date.now()):
   return undefined;
 }
 
-/** Next backoff delay: full jitter, or the provider's Retry-After when given. */
+/** Next backoff delay: Retry-After from provider, or exponential backoff with jitter. */
 function backoffDelayMs(error: unknown, attempt: number): number {
   const retryAfter = error instanceof AIProviderError ? error.retryAfterMs : undefined;
   if (typeof retryAfter === "number" && Number.isFinite(retryAfter) && retryAfter > 0) {
-    // Respect the provider's instruction, but cap it so a hostile or buggy
-    // Retry-After value can never stall generation indefinitely.
+    // Respect the provider's instruction, bounded by max delay.
     return Math.min(retryAfter, RETRY_DELAY_MAX_MS);
   }
-  const cap = Math.min(RETRY_DELAY_MAX_MS, RETRY_DELAY_BASE_MS * Math.pow(2, attempt));
-  return Math.floor(Math.random() * cap); // full jitter
+  // Exponential backoff with jitter: 2000ms * 2^attempt (2s, 4s, 8s) + random 0..1000ms jitter
+  const base = RETRY_DELAY_BASE_MS * Math.pow(2, attempt);
+  const jitter = Math.floor(Math.random() * 1000);
+  return Math.min(RETRY_DELAY_MAX_MS, base + jitter);
 }
 
 export async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Promise<string> {
@@ -286,22 +291,36 @@ export async function chat(messages: ChatMessage[], opts: ChatOptions = {}): Pro
       if (!(error instanceof AIProviderError && error.retryable) || attempt === attempts - 1) break;
       const delay = backoffDelayMs(error, attempt);
       const retryAfterNote =
-        error.retryAfterMs != null ? ` (Retry-After ${Math.round(error.retryAfterMs)}ms)` : "";
+        error instanceof AIProviderError && error.retryAfterMs != null
+          ? ` (Retry-After ${Math.round(error.retryAfterMs)}ms)`
+          : "";
       console.warn(
-        `AI request failed (attempt ${attempt + 1}/${attempts})${retryAfterNote}, retrying in ${Math.round(delay)}ms:`,
-        error instanceof Error ? safeProviderDetail(error.message, config.apiKey) : "Unknown error"
+        `AI request failed (status ${error instanceof AIProviderError ? error.status : 502}, attempt ${attempt + 1}/${attempts}, provider=${config.provider}, model=${config.model})${retryAfterNote}, retrying in ${Math.round(delay)}ms:`,
+        safeProviderDetail(error instanceof Error ? error.message : "Unknown error", config.apiKey)
       );
       await sleep(delay);
     }
   }
-  if (lastError instanceof AIProviderError) throw lastError;
+
+  if (lastError instanceof AIProviderError) {
+    if (lastError.status === 429) {
+      console.error(
+        `AI provider rate limit exceeded (HTTP 429) after ${attempts} attempts (provider=${config.provider}, model=${config.model}):`,
+        safeProviderDetail(lastError.message, config.apiKey)
+      );
+    }
+    throw lastError;
+  }
   throw new AIProviderError("AI provider unavailable.");
 }
 
 function safeProviderDetail(raw: string, apiKey: string): string {
-  // Never log or return authorization material, even if a provider reflects it.
-  const withoutConfiguredKey = apiKey ? raw.split(apiKey).join("[redacted]") : raw;
-  return withoutConfiguredKey
+  if (!raw) return "";
+  const envKey = process.env.AI_API_KEY?.trim() || "";
+  let clean = raw;
+  if (apiKey) clean = clean.split(apiKey).join("[redacted]");
+  if (envKey && envKey !== apiKey) clean = clean.split(envKey).join("[redacted]");
+  return clean
     .replace(/(?:bearer\s+)?(?:sk|key|token)[-_a-z0-9.]{8,}/gi, "[redacted]")
     .replace(/"?(?:api[_-]?key|authorization|token)"?\s*[:=]\s*"?[^"\s,}]+/gi, "credential=[redacted]")
     .slice(0, 300);
