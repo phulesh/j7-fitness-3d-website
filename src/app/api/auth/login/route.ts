@@ -1,5 +1,6 @@
 import { cookies } from "next/headers";
-import { getUserByEmail, sessionCookie, signSession, verifyPassword, checkOrigin } from "@/lib/security";
+import { getUserByEmail, readSession, sessionCookie, signSession, verifyPassword, checkOrigin } from "@/lib/security";
+import { claimGuestEbooks } from "@/lib/ebooks";
 import { loginSchema } from "@/lib/validation";
 import { bad, json, limit } from "@/lib/api";
 
@@ -19,7 +20,9 @@ export async function POST(req: Request) {
   if (!user || user.isGuest) return bad("Invalid email or password.", 401);
   const ok = await verifyPassword(parsed.data.password, user.passwordHash);
   if (!ok) return bad("Invalid email or password.", 401);
+  const priorSession = await readSession();
+  const claimedEbookIds = claimGuestEbooks(priorSession?.isGuest ? priorSession.id : undefined, user.id);
   const token = await signSession({ id: user.id, email: user.email, name: user.name, isGuest: false });
   cookies().set(sessionCookie(token));
-  return json({ user: { id: user.id, email: user.email, name: user.name, isGuest: false } });
+  return json({ user: { id: user.id, email: user.email, name: user.name, isGuest: false }, claimedEbookIds });
 }
