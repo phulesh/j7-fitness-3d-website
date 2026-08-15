@@ -6,26 +6,35 @@ import { Header } from "@/components/Header";
 import { Footer } from "@/components/Footer";
 import { ErrorBanner } from "@/components/ErrorBanner";
 import { COMPLETE_PIPELINE_STAGES, DEFAULT_SETTINGS, LANGUAGES, LENGTHS, type EbookSettings, type SyllabusInfo } from "@/lib/types";
-import { api, ensureSession } from "@/lib/client";
+import { api, CREATE_DRAFT_KEY, ensureSession } from "@/lib/client";
 import { BookOpen, ChevronDown, FileUp, Sparkles } from "lucide-react";
 import { nanoid } from "nanoid";
-
-const DRAFT_KEY = "folio:simple-create-draft";
 const steps = COMPLETE_PIPELINE_STAGES.map((stage) => stage.label);
 
 function initialSettings(topic = ""): EbookSettings {
   try {
-    const saved = typeof window !== "undefined" ? localStorage.getItem(DRAFT_KEY) : null;
-    return { ...DEFAULT_SETTINGS, ...(saved ? JSON.parse(saved) : {}), topic: topic || (saved ? JSON.parse(saved).topic : "") };
+    const saved = typeof window !== "undefined" ? localStorage.getItem(CREATE_DRAFT_KEY) : null;
+    const parsed = saved ? JSON.parse(saved) : null;
+    const settings = parsed?.settings || parsed || {};
+    return { ...DEFAULT_SETTINGS, ...settings, topic: topic || settings.topic || "" };
   } catch { return { ...DEFAULT_SETTINGS, topic }; }
 }
 
 function NewInner() {
   const router = useRouter(); const params = useSearchParams(); const key = useRef(nanoid(16));
+  const draftId = useRef("");
   const [settings, setSettings] = useState<EbookSettings>(() => initialSettings(params.get("topic") || ""));
   const [source, setSource] = useState(""); const [syllabus, setSyllabus] = useState<SyllabusInfo | null>(null);
   const [advanced, setAdvanced] = useState(false); const [busy, setBusy] = useState(false); const [error, setError] = useState("");
-  useEffect(() => { try { localStorage.setItem(DRAFT_KEY, JSON.stringify(settings)); } catch {} }, [settings]);
+  useEffect(() => {
+    try {
+      if (!draftId.current) {
+        const parsed = JSON.parse(localStorage.getItem(CREATE_DRAFT_KEY) || "null");
+        draftId.current = parsed?.id || `local_${nanoid(24)}`;
+      }
+      localStorage.setItem(CREATE_DRAFT_KEY, JSON.stringify({ id: draftId.current, updatedAt: new Date().toISOString(), settings }));
+    } catch {}
+  }, [settings]);
   useEffect(() => { ensureSession().catch(() => {}); }, []);
   const set = <K extends keyof EbookSettings>(name: K, value: EbookSettings[K]) => setSettings(s => ({ ...s, [name]: value }));
   async function upload(file: File) {
@@ -56,7 +65,7 @@ function NewInner() {
       });
       // Simple Mode always owns the complex research and writing pipeline.
       await api(`/api/ebooks/${id}/generate`, { method: "POST", body: JSON.stringify({}) });
-      localStorage.removeItem(DRAFT_KEY); router.replace(`/ebooks/${id}/3d`);
+      localStorage.removeItem(CREATE_DRAFT_KEY); router.replace(`/ebooks/${id}/3d`);
     } catch (e: any) { setError(e.message || "Could not start your ebook."); setBusy(false); }
   }
   return <><Header /><main className="mx-auto max-w-4xl px-4 py-8 md:py-12">

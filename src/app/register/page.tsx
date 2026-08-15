@@ -4,7 +4,7 @@ import { FormEvent, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/Header";
-import { api } from "@/lib/client";
+import { api, claimLocalCreateDraft } from "@/lib/client";
 
 export default function RegisterPage() {
   const [name, setName] = useState("");
@@ -20,6 +20,7 @@ export default function RegisterPage() {
     setError("");
     try {
       await api("/api/auth/register", { method: "POST", body: JSON.stringify({ name, email, password }) });
+      await claimLocalCreateDraft();
       router.push("/ebooks");
     } catch (err: any) {
       setError(err.message);

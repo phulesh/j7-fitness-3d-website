@@ -34,10 +34,17 @@ function normalizeSettings(settings: EbookSettings): EbookSettings {
   };
 }
 
-export function createEbook(userId: string, settings: EbookSettings): EbookDocument {
+export function createEbook(
+  userId: string,
+  settings: EbookSettings,
+  requestedId?: string,
+  initialPatch: Partial<EbookDocument> = {}
+): EbookDocument {
   const store = getStore();
   if (!store.users.some((user) => user.id === userId)) throw new Error("Cannot create an ebook without a persistent owner account");
-  const id = nanoid(14);
+  const id = requestedId || nanoid(14);
+  if (!/^[A-Za-z0-9_-]{8,80}$/.test(id)) throw new Error("Invalid ebook ID");
+  if (store.ebooks.some((ebook) => ebook.id === id || ebook.ebookId === id)) throw new Error("EBOOK_EXISTS");
   const now = nowIso();
   const normalized = normalizeSettings(settings);
   const title = normalized.customTitle?.trim() || normalized.title?.trim() || normalized.topic.trim();
@@ -73,9 +80,24 @@ export function createEbook(userId: string, settings: EbookSettings): EbookDocum
     createdAt: now,
     updatedAt: now,
   };
-  store.ebooks.push(serialize(doc));
-  persist();
-  return doc;
+  const completeDoc: EbookDocument = {
+    ...doc,
+    ...initialPatch,
+    id,
+    ebookId: id,
+    userId,
+    settings: normalized,
+    createdAt: now,
+    updatedAt: now,
+  };
+  store.ebooks.push(serialize(completeDoc));
+  try {
+    persist();
+  } catch (error) {
+    store.ebooks = store.ebooks.filter((ebook) => ebook.id !== id && ebook.ebookId !== id);
+    throw error;
+  }
+  return completeDoc;
 }
 
 export function duplicateEbook(id: string, userId: string): EbookDocument | null {
@@ -136,6 +158,64 @@ export function duplicateEbook(id: string, userId: string): EbookDocument | null
     updatedAt: copy.updatedAt,
   });
   return getEbook(copy.id, userId);
+}
+
+/**
+ * Atomically moves every server-side guest ebook into the account that has
+ * just authenticated. The ebook IDs and timestamps do not change, making the
+ * operation naturally idempotent and safe to retry after an interrupted
+ * response. Guest accounts are retained; only ownership is transferred.
+ */
+export function claimGuestEbooks(guestUserId: string | undefined, userId: string): string[] {
+  if (!guestUserId || guestUserId === userId) return [];
+  const store = getStore();
+  const guest = store.users.find((user) => user.id === guestUserId);
+  const owner = store.users.find((user) => user.id === userId);
+  if (!guest?.isGuest || !owner || owner.isGuest) return [];
+  const rows = store.ebooks.filter((ebook) => ebook.userId === guestUserId);
+  if (!rows.length) return [];
+  for (const ebook of rows) ebook.userId = userId;
+  try {
+    // persist() uses one BEGIN IMMEDIATE transaction for app_state and all
+    // normalized ebook rows, including owner_id.
+    persist();
+  } catch (error) {
+    for (const ebook of rows) ebook.userId = guestUserId;
+    throw error;
+  }
+  return rows.map((ebook) => String(ebook.ebookId || ebook.id));
+}
+
+export type LocalDraftClaim = {
+  id: string;
+  updatedAt?: string;
+  settings: EbookSettings;
+  sourceMaterial?: { filename?: string; text?: string; uploadedAt?: string };
+};
+
+/**
+ * Imports an offline create-form draft once. An existing ID is never copied;
+ * an account-owned row wins regardless of client timestamp, and another
+ * account's ID is rejected. Thus an old client can never overwrite a newer
+ * server document.
+ */
+export function claimLocalDraft(userId: string, draft: LocalDraftClaim): { ebook: EbookDocument; created: boolean } {
+  const store = getStore();
+  const existingRow = store.ebooks.find((ebook) => ebook.id === draft.id || ebook.ebookId === draft.id);
+  if (existingRow) {
+    if (existingRow.userId !== userId) throw new Error("EBOOK_FORBIDDEN");
+    return { ebook: hydrate(existingRow, true), created: false };
+  }
+
+  const sourceMaterial = draft.sourceMaterial?.text
+    ? {
+        filename: String(draft.sourceMaterial.filename || "Recovered offline draft").slice(0, 240),
+        text: String(draft.sourceMaterial.text).replace(/\0/g, "").slice(0, 200_000),
+        uploadedAt: String(draft.sourceMaterial.uploadedAt || draft.updatedAt || nowIso()),
+      }
+    : undefined;
+  const ebook = createEbook(userId, draft.settings, draft.id, { sourceMaterial });
+  return { ebook, created: true };
 }
 
 export function findRecentDuplicateDraft(userId: string, topic: string, windowMs = 8000): EbookDocument | null {

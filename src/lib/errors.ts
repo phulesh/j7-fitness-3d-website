@@ -23,7 +23,7 @@ export function friendlyError(input: { status?: number; message?: string; code?:
     return "Too many requests right now. Your ebook has been saved. Please wait a moment and retry.";
   }
   if (status === 401 || /sign in|unauthorized/i.test(message)) {
-    return "Please sign in to continue. Your ebook on this device has been saved.";
+    return "Please sign in to continue. Ebooks saved to your account will be restored after you sign in.";
   }
   if (status === 404 || /not found/i.test(message)) {
     return "That ebook could not be found. Open My Ebooks and select the volume again.";

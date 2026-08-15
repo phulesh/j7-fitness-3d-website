@@ -59,8 +59,19 @@ try {
   const email = process.env.TEST_ACCOUNT_EMAIL || `persist-${suffix}@example.com`;
   const password = process.env.TEST_ACCOUNT_PASSWORD || "Correct-Horse-1947";
   const a = new Browser();
-  let x = await a.request("/api/auth/register", { method: "POST", body: JSON.stringify({ name: "Persistence Test", email, password }) });
+  let x = await a.request("/api/auth/guest", { method: "POST", body: "{}" });
+  assert(x.res.ok && x.data.user?.isGuest, "anonymous creation starts with a persistent guest owner");
+  const guestUserId = x.data.user.id;
+  const guestSettings = { topic: `Pre-auth ebook ${suffix}`, title: `Pre-auth ebook ${suffix}`, language: "en", chapterCount: 4 };
+  x = await a.request("/api/ebooks", { method: "POST", headers: { "idempotency-key": `guest-${suffix}` }, body: JSON.stringify(guestSettings) });
+  assert(x.res.status === 201 && x.data.ebook?.id, "ebook created before sign-in is safely stored in the database");
+  const guestEbookId = x.data.ebook.id;
+
+  x = await a.request("/api/auth/register", { method: "POST", body: JSON.stringify({ name: "Persistence Test", email, password }) });
   assert(x.res.status === 200 && x.data.user?.id, "A register creates an account"); const userId = x.data.user.id;
+  assert(x.data.claimedEbookIds?.includes(guestEbookId), "account creation claims the pre-auth ebook exactly once");
+  x = await a.request("/api/ebooks");
+  assert(x.data.ebooks.filter((e) => e.id === guestEbookId).length === 1, "claimed pre-auth ebook appears once in the account");
   const duplicate = await new Browser().request("/api/auth/register", { method: "POST", body: JSON.stringify({ name: "Duplicate", email: email.toUpperCase(), password }) });
   assert(duplicate.res.status === 409, "same normalized email cannot create a duplicate account");
   const preLogoutCookie = a.cookie;
@@ -71,6 +82,19 @@ try {
   x = await a.request("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
   assert(x.res.ok && x.data.user.id === userId, "B/C logout and login restore the same account ID");
 
+  const preLoginBrowser = new Browser();
+  await preLoginBrowser.request("/api/auth/guest", { method: "POST", body: "{}" });
+  x = await preLoginBrowser.request("/api/ebooks", {
+    method: "POST",
+    headers: { "idempotency-key": `login-claim-${suffix}` },
+    body: JSON.stringify({ topic: `Claim on login ${suffix}`, title: `Claim on login ${suffix}`, language: "en", chapterCount: 4 }),
+  });
+  const loginClaimEbookId = x.data.ebook.id;
+  x = await preLoginBrowser.request("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
+  assert(x.res.ok && x.data.claimedEbookIds?.includes(loginClaimEbookId), "sign-in claims a pre-auth ebook into the existing account");
+  x = await a.request("/api/ebooks");
+  assert(x.data.ebooks.filter((e) => e.id === loginClaimEbookId).length === 1, "claimed-on-login ebook appears once across browsers");
+
   const settings = { topic: `Persistent ebook ${suffix}`, title: `Persistent ebook ${suffix}`, language: "en", chapterCount: 4 };
   x = await a.request("/api/ebooks", { method: "POST", headers: { "idempotency-key": suffix }, body: JSON.stringify(settings) });
   assert(x.res.status === 201 && x.data.ebook?.id, "D create ebook persists through backend API"); const ebookId = x.data.ebook.id;
@@ -78,6 +102,20 @@ try {
   assert(noAi.res.status === 503 && /administrator must set AI_PROVIDER/.test(noAi.data.error), "missing AI configuration returns a visible backend error and does not fake generation");
   x = await a.request(`/api/ebooks/${ebookId}`);
   assert(x.res.ok && x.data.ebook.id === ebookId, "E browser refresh reloads ebook from backend");
+
+  const localDraftId = `local_${suffix}draft`;
+  const localDraft = {
+    id: localDraftId,
+    updatedAt: "2025-01-01T00:00:00.000Z",
+    settings: { topic: `Recovered local draft ${suffix}`, title: `Recovered local draft ${suffix}`, language: "en", chapterCount: 4 },
+  };
+  x = await a.request("/api/ebooks/claim", { method: "POST", body: JSON.stringify({ draft: localDraft }) });
+  assert(x.res.status === 201 && x.data.ebook.id === localDraftId, "local draft migrates into the authenticated database account");
+  x = await a.request("/api/ebooks/claim", { method: "POST", body: JSON.stringify({ draft: { ...localDraft, settings: { ...localDraft.settings, title: "Older client overwrite" } } }) });
+  assert(x.res.status === 200 && x.data.reused && x.data.ebook.title !== "Older client overwrite", "local draft migration is idempotent and cannot overwrite the server copy");
+  x = await a.request("/api/ebooks");
+  assert(x.data.ebooks.filter((e) => e.id === localDraftId).length === 1, "local draft migration creates exactly one ebook");
+
   await a.request("/api/auth/logout", { method: "POST", body: "{}" });
   await a.request("/api/auth/login", { method: "POST", body: JSON.stringify({ email, password }) });
   x = await a.request("/api/ebooks");
@@ -124,15 +162,23 @@ try {
   assert(x.res.status === 404, "different account cannot update ebook");
   x = await other.request(`/api/ebooks/${ebookId}`, { method: "DELETE", body: "{}" });
   assert(x.res.status === 404, "different account cannot delete ebook");
+  x = await other.request("/api/ebooks/claim", { method: "POST", body: JSON.stringify({ draft: localDraft }) });
+  assert(x.res.status === 403, "different account cannot claim an existing ebook ID");
 
   if (!process.env.TEST_BASE_URL) {
     const db = new DatabaseSync(path.resolve("data/folio-test.db"));
     const user = db.prepare("SELECT id,password_hash,created_at,updated_at FROM users WHERE email=?").get(email);
     const ebook = db.prepare("SELECT id,owner_id,title,document_json,created_at,updated_at FROM ebooks WHERE id=?").get(ebookId);
+    const claimedGuest = db.prepare("SELECT id,owner_id,created_at,updated_at FROM ebooks WHERE id=?").get(guestEbookId);
+    const claimedLocal = db.prepare("SELECT id,owner_id,title,created_at,updated_at FROM ebooks WHERE id=?").get(localDraftId);
+    const guestUser = db.prepare("SELECT id,is_guest FROM users WHERE id=?").get(guestUserId);
     assert(user?.id === userId && user.password_hash !== password && /^\$2[aby]\$12\$/.test(user.password_hash), "password is a bcrypt cost-12 hash in the database");
     assert(Boolean(user.created_at && user.updated_at), "user timestamps are stored");
     assert(ebook?.owner_id === userId && ebook.title === changed, "ebook database row has enforced owner and persisted edit");
     assert(Boolean(ebook.created_at && ebook.updated_at && ebook.document_json), "ebook document and timestamps are stored");
+    assert(claimedGuest?.owner_id === userId && guestUser?.is_guest === 1, "guest ebook owner_id moved to the account without deleting the guest account");
+    assert(claimedLocal?.owner_id === userId && claimedLocal.title === localDraft.settings.title, "recovered local draft has the permanent account owner_id and server content");
+    assert(Boolean(claimedGuest.created_at && claimedGuest.updated_at && claimedLocal.created_at && claimedLocal.updated_at), "claimed ebook timestamps are stored in SQLite");
     db.close();
   }
   console.log("PERSISTENCE E2E: ALL PASS");
