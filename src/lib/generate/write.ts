@@ -1,5 +1,5 @@
 import { nanoid } from "nanoid";
-import { chat, aiConfigured, RESEARCH_WRITER_SYSTEM } from "../ai";
+import { chat, aiConfigured, assertAIConfigured, RESEARCH_WRITER_SYSTEM } from "../ai";
 import { splitSentences, extractKeyTerms } from "../research/extract";
 import { searchCommonsImages } from "../research/commons";
 import type {
@@ -141,6 +141,11 @@ export async function writeChapter(opts: {
       images,
     });
   }
+
+  // Fail fast and visibly. Without server-side AI configuration we must NOT
+  // quietly fall through to the deterministic local composer and publish
+  // thin/empty chapters — the operator gets the missing variable names.
+  assertAIConfigured(`Chapter ${index + 1} generation`);
 
   let chapter: Chapter | null = null;
 
@@ -887,6 +892,9 @@ export async function writeFrontMatter(opts: {
       facts: bundle.facts || [],
     });
   }
+  // Reached only when no deterministic composer handled this book, so a
+  // provider is genuinely required here.
+  assertAIConfigured("Front matter generation");
   const src = bundle.sources.find((s) => s.extractedText.length > 200);
   const cite = src ? ` [${src.id}]` : "";
   const lead = bundle.wikiPages[0]?.extract

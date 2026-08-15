@@ -155,9 +155,9 @@ export async function POST(req: Request, { params }: { params: { id: string; idx
       }));
       saveChapters(ebook.id, ebook.chapters);
       updateEbook(ebook.id, { chapters: ebook.chapters });
-      return json({ chapter, note: "Applied a light local simplification. Connect AI_API_KEY for richer rewriting." });
+      return json({ chapter, note: "AI is not configured on the server (AI_PROVIDER, AI_API_KEY, AI_BASE_URL, AI_MODEL). Applied a light local simplification only \u2014 no AI rewriting was performed." });
     }
-    return bad("This rewrite needs an AI key (AI_API_KEY). Use Regenerate Chapter to rebuild from sources.");
+    return bad("This rewrite needs server-side AI configuration. An administrator must set AI_PROVIDER, AI_API_KEY, AI_BASE_URL, and AI_MODEL on the server.", 503);
   }
 
   const raw = await chat(
