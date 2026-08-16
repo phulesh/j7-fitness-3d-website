@@ -60,7 +60,7 @@ Switching vendors is an environment change, never a code change. No provider is 
 | OpenRouter | `https://openrouter.ai/api/v1` | `openai/gpt-4o-mini` |
 | Groq | `https://api.groq.com/openai/v1` | `llama-3.3-70b-versatile` |
 | Together | `https://api.together.xyz/v1` | `Qwen/Qwen2.5-72B-Instruct-Turbo` |
-| DeepSeek | `https://api.deepseek.com/v1` | `deepseek-chat` |
+| DeepSeek | `https://api.deepseek.com` | `deepseek-v4-flash` |
 | Self-hosted vLLM / Ollama gateway | your HTTPS `/v1` root | your served model ID |
 | Anthropic | `https://api.anthropic.com/v1` (set `AI_PROVIDER=anthropic`) | `claude-3-5-sonnet-latest` |
 
